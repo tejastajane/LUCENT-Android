@@ -208,6 +208,20 @@ fun VideoPlayerScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val frame = backdropFrame
+        if (frame != null) {
+            key(backdropFrameVersion) {
+                Image(
+                    bitmap = frame.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    // This captured frame is a backdrop source behind the native VLC view.
+                    // VLC itself is later in the Box and remains fully visible and unlayered.
+                    modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)
+                )
+            }
+        }
+
         // VLC must render directly to its native TextureView. Wrapping it in layerBackdrop
         // or an alpha graphics layer can make video output black on real devices.
         AndroidView(
@@ -258,21 +272,6 @@ fun VideoPlayerScreen(
                     }
                 }
                 delay(200L)
-            }
-        }
-
-        val frame = backdropFrame
-        if (frame != null) {
-            key(backdropFrameVersion) {
-                Image(
-                    bitmap = frame.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .layerBackdrop(backdrop)
-                        .graphicsLayer { alpha = 0.01f }
-                )
             }
         }
 
