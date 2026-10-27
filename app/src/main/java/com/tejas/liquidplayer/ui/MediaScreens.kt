@@ -639,7 +639,8 @@ private fun EmptyState(
 private fun BottomNavigation(
     backdrop: LayerBackdrop,
     selectedTab: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val navItems = listOf(
         Icons.Default.Movie,
@@ -652,7 +653,7 @@ private fun BottomNavigation(
         onTabSelected = onTabSelected,
         backdrop = backdrop,
         tabsCount = navItems.size,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         navItems.forEachIndexed { index, icon ->
             LiquidBottomTab(onClick = { onTabSelected(index) }) {
