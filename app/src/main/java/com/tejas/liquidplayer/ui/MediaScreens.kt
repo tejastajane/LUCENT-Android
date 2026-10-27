@@ -285,12 +285,7 @@ private fun FoldersScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(folders, key = { it.first }) { (name, folderVideos) ->
-                        GlassSurface(
-                            backdrop,
-                            modifier = Modifier.fillMaxWidth().clickable { onFolderSelected(name) },
-                            cornerRadius = 22.dp,
-                            surfaceAlpha = 0.045f
-                        ) {
+                        Column(Modifier.fillMaxWidth().clickable { onFolderSelected(name) }) {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -339,7 +334,7 @@ private fun BrowseScreen(
             Text("Browse", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             IconButton(onClick = onChooseFolder) { Icon(Icons.Default.FolderOpen, contentDescription = "Choose storage folder", tint = Color.White) }
         }
-        GlassSurface(backdrop, Modifier.fillMaxWidth().padding(horizontal = 16.dp), cornerRadius = 26.dp, surfaceAlpha = 0.07f) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF080808))) {
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Storage, null, tint = Color.White, modifier = Modifier.size(34.dp))
@@ -375,7 +370,7 @@ private fun BrowseScreen(
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(folderGroups, key = { it.first }) { (name, grouped) ->
-                        GlassSurface(backdrop, Modifier.fillMaxWidth().clickable { onPlay(grouped.first()) }, cornerRadius = 18.dp, surfaceAlpha = 0.035f) {
+                        Column(Modifier.fillMaxWidth().clickable { onPlay(grouped.first()) }) {
                             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Folder, null, tint = Color.LightGray, modifier = Modifier.size(28.dp))
                                 Spacer(Modifier.width(12.dp))
@@ -430,7 +425,7 @@ private fun MoreScreen(
 ) {
     Column(Modifier.fillMaxSize()) {
         Text("More", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 14.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-        GlassSurface(backdrop, Modifier.fillMaxWidth().padding(horizontal = 16.dp), cornerRadius = 26.dp, surfaceAlpha = 0.065f) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.width(14.dp))
@@ -503,7 +498,7 @@ private data class ActionItem(
 private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<SettingItem>) {
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = Color.LightGray, style = MaterialTheme.typography.titleSmall)
-        GlassSurface(backdrop, Modifier.fillMaxWidth(), cornerRadius = 22.dp, surfaceAlpha = 0.045f) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF080808))) {
             Column {
                 items.forEachIndexed { index, item ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -623,7 +618,7 @@ private fun EmptyState(
     onSecondaryAction: (() -> Unit)? = null
 ) {
     Box(Modifier.fillMaxSize().padding(22.dp), contentAlignment = Alignment.Center) {
-        GlassSurface(backdrop, Modifier.fillMaxWidth(), cornerRadius = 28.dp, surfaceAlpha = 0.055f) {
+        Column(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.Movie, null, tint = Color.LightGray, modifier = Modifier.size(42.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
