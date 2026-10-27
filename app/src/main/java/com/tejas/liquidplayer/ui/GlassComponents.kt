@@ -46,9 +46,11 @@ fun GlassSurface(
                 // Keep the background legible; the lens performs the actual refraction.
                 vibrancy()
                 blur(2.dp.toPx())
+                // Match Kyant0's clear, glossy button recipe; keep dispersion off
+                // for the requested neutral white/grey glass.
                 lens(
-                    refractionHeight = 14.dp.toPx(),
-                    refractionAmount = 26.dp.toPx(),
+                    refractionHeight = 12.dp.toPx(),
+                    refractionAmount = 24.dp.toPx(),
                     depthEffect = true,
                     chromaticAberration = false
                 )
