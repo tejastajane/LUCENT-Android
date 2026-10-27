@@ -65,6 +65,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -270,11 +271,11 @@ private fun FoldersScreen(
     Column(Modifier.fillMaxSize()) {
         Text("Folder", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 18.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) {
-            EmptyState(backdrop, "Video permission needed", "Allow access to group videos by their storage folders.", "Go to Videos") { onFolderSelected("") }
+            EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected("") })
         } else {
             val folders = videos.groupBy { it.folderName }.toList().sortedBy { it.first.lowercase(Locale.ROOT) }
             if (folders.isEmpty()) {
-                EmptyState(backdrop, "No folders yet", "Folders containing video files will appear here.", "Refresh library") { onFolderSelected("") }
+                EmptyState(backdrop, title = "No folders yet", message = "Folders containing video files will appear here.", action = "Refresh library", onAction = { onFolderSelected("") })
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -352,7 +353,7 @@ private fun BrowseScreen(
                 }
                 Spacer(Modifier.height(12.dp))
                 Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.12f))) {
-                    Box(Modifier.fillMaxWidth(if (storage.first > 0L) used.toFloat() / storage.first.toFloat() else 0f).height(5.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.8f)))
+                    Box(Modifier.fillMaxWidth(used.toFloat() / storage.first.coerceAtLeast(1L).toFloat()).height(5.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.8f)))
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

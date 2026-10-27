@@ -84,7 +84,7 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     fun addExternalSubtitle(uri: Uri) {
         if (released) return
         runCatching {
-            player.addSlave(Media.Slave.Type.Subtitle, uri, true)
+            player.addSlave(0, uri, true)
         }
     }
 
