@@ -35,13 +35,9 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
 
     fun play(uri: Uri) {
         if (released) return
-        val media = Media(libVlc, uri)
-        try {
-            player.media = media
-            player.play()
-        } finally {
-            media.release()
-        }
+        // Use libVLC's own URI playback path. It creates the Media, assigns it, releases
+        // the temporary reference, and starts playback in the order expected by libVLC.
+        player.play(uri)
     }
 
     fun togglePlayPause() {
