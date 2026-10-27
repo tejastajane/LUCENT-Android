@@ -13,6 +13,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -98,6 +101,7 @@ import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.GlassSurface
 import kotlinx.coroutines.delay
+import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
 private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Display, Speed }
@@ -124,6 +128,7 @@ fun VideoPlayerScreen(
     var panel by remember { mutableStateOf(PlayerPanel.None) }
     var controlsVisible by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(false) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(video.durationMs) }
     var audioTracks by remember { mutableStateOf<List<TrackOption>>(emptyList()) }
@@ -172,6 +177,26 @@ fun VideoPlayerScreen(
             isPlaying = runCatching { controller.player.isPlaying }.getOrDefault(false)
             delay(400L)
         }
+    }
+
+    // Surface native decode/open failures instead of leaving users with a silent black player.
+    DisposableEffect(controller, video.uri) {
+        val mainHandler = Handler(Looper.getMainLooper())
+        val listener = MediaPlayer.EventListener { event ->
+            when (event.type) {
+                MediaPlayer.Event.Opening ->
+                    Log.d("LiquidPlayer", "libVLC opening ${video.uri}")
+                MediaPlayer.Event.Playing ->
+                    mainHandler.post { playbackError = null }
+                MediaPlayer.Event.EncounteredError -> mainHandler.post {
+                    playbackError = "libVLC could not open or decode this video. Try disabling hardware acceleration in More."
+                    Log.e("LiquidPlayer", "libVLC playback error for ${video.uri}")
+                }
+                else -> Unit
+            }
+        }
+        controller.player.setEventListener(listener)
+        onDispose { controller.player.setEventListener(null) }
     }
 
     LaunchedEffect(panel, controller) {
@@ -249,6 +274,20 @@ fun VideoPlayerScreen(
                         .graphicsLayer { alpha = 0.01f }
                 )
             }
+        }
+
+        playbackError?.let { message ->
+            Text(
+                text = message,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.82f))
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            )
         }
 
         // Tap the unobstructed video area to reveal/hide controls.
