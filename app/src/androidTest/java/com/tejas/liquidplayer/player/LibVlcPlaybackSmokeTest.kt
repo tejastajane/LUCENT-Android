@@ -7,7 +7,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tejas.liquidplayer.debug.PlaybackHostActivity
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,8 +29,9 @@ class LibVlcPlaybackSmokeTest {
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
             put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/LiquidPlayerTest")
         }
-        val contentUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-        assertNotNull("Could not create a MediaStore test video", contentUri)
+        val contentUri = requireNotNull(
+            context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+        ) { "Could not create a MediaStore test video" }
 
         val scenario = ActivityScenario.launch(PlaybackHostActivity::class.java)
         var controller: LibVlcController? = null
@@ -39,7 +39,7 @@ class LibVlcPlaybackSmokeTest {
         val playbackEvent = CountDownLatch(1)
 
         try {
-            context.contentResolver.openOutputStream(contentUri!!, "w").use { output ->
+            context.contentResolver.openOutputStream(contentUri, "w").use { output ->
                 assertNotNull("Could not write the MediaStore test video", output)
                 fixture.inputStream().use { input -> input.copyTo(output!!) }
             }
@@ -70,7 +70,7 @@ class LibVlcPlaybackSmokeTest {
         } finally {
             scenario.onActivity { controller?.close() }
             scenario.close()
-            context.contentResolver.delete(contentUri!!, null, null)
+            context.contentResolver.delete(contentUri, null, null)
         }
     }
 }
