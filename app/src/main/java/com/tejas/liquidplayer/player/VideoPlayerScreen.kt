@@ -1,11 +1,5 @@
 package com.tejas.liquidplayer.player
-import android.graphics.Bitmap
-import android.view.TextureView
-import androidx.compose.foundation.Image
-import androidx.compose.runtime.key
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.isActive
 
 import android.app.Activity
@@ -113,11 +107,9 @@ fun VideoPlayerScreen(
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val backdrop = rememberLayerBackdrop()
 
-    // VLC renders into a TextureView. Keep that view outside Backdrop's capture layer
-    // (wrapping the live VLC view in layerBackdrop made playback render black on device).
-    var videoTextureView by remember { mutableStateOf<TextureView?>(null) }
-    var backdropFrame by remember { mutableStateOf<Bitmap?>(null) }
-    var backdropFrameVersion by remember { mutableIntStateOf(0) }
+    // Do not start media until the native VLC views are attached to the AndroidView.
+    // The attached-controller key also handles the hardware-acceleration setting recreating VLC.
+    var attachedController by remember { mutableStateOf<LibVlcController?>(null) }
 
     var panel by remember { mutableStateOf(PlayerPanel.None) }
     var controlsVisible by remember { mutableStateOf(true) }
@@ -160,7 +152,8 @@ fun VideoPlayerScreen(
         }
     }
 
-    LaunchedEffect(video.uri, controller) {
+    LaunchedEffect(video.uri, controller, attachedController) {
+        if (attachedController !== controller) return@LaunchedEffect
         controller.play(video.uri)
         while (isActive) {
             positionMs = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
@@ -168,34 +161,6 @@ fun VideoPlayerScreen(
             if (mediaLength > 0L) durationMs = mediaLength
             isPlaying = runCatching { controller.player.isPlaying }.getOrDefault(false)
             delay(400L)
-        }
-    }
-
-    // Capture a small live copy of VLC's TextureView for Kyant0 Backdrop to refract.
-    // The TextureView itself remains untouched and visible, so VLC's native video output
-    // is never drawn into Compose's backdrop GraphicsLayer.
-    LaunchedEffect(videoTextureView) {
-        var reusableBitmap: Bitmap? = null
-        while (isActive) {
-            val texture = videoTextureView
-            if (texture != null && texture.isAvailable && texture.width > 0 && texture.height > 0) {
-                val longestSide = maxOf(texture.width, texture.height)
-                val scale = minOf(1f, 640f / longestSide.toFloat())
-                val width = (texture.width * scale).toInt().coerceAtLeast(1)
-                val height = (texture.height * scale).toInt().coerceAtLeast(1)
-
-                if (reusableBitmap == null || reusableBitmap.width != width || reusableBitmap.height != height) {
-                    reusableBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                }
-
-                val copied = runCatching { texture.getBitmap(reusableBitmap) }.getOrNull()
-                if (copied != null) {
-                    backdropFrame = copied
-                    backdropFrameVersion++
-                }
-            }
-            // ~5 fps is sufficient for optical refraction and avoids full-resolution readback.
-            delay(200L)
         }
     }
 
@@ -208,7 +173,12 @@ fun VideoPlayerScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        // Keep the live VLC view inside its own recorded scene and use the stable AndroidView
+        // composition path recommended for TextureView-backed video. The 0.999 alpha is
+        // intentional: alpha=1 can bypass the backdrop capture path on some devices.
+        Box(
+            Modifier.fillMaxSize().background(Color.Black).layerBackdrop(backdrop)
+        ) {
             AndroidView(
                 factory = { ctx ->
                     VLCVideoLayout(ctx).apply {
@@ -216,36 +186,22 @@ fun VideoPlayerScreen(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                        controller.attach(this)
-                        post { videoTextureView = findTextureViewDescendant() }
+                        post {
+                            controller.attach(this)
+                            attachedController = controller
+                        }
                     }
                 },
                 update = { layout ->
-                    if (videoTextureView == null) {
-                        videoTextureView = layout.findTextureViewDescendant()
+                    if (attachedController !== controller) {
+                        layout.post {
+                            controller.attach(layout)
+                            attachedController = controller
+                        }
                     }
                 },
-                // Do NOT apply layerBackdrop to the live VLC TextureView: it breaks native output.
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.999f }
             )
-        }
-
-        // Feed the actual moving video image to Backdrop without drawing this readback visibly.
-        // graphicsLayer is outside layerBackdrop so only the image output is alpha-zero;
-        // Backdrop still retains its independent recorded layer for drawBackdrop effects.
-        val currentFrame = backdropFrame
-        if (currentFrame != null) {
-            key(backdropFrameVersion) {
-                Image(
-                    bitmap = currentFrame.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = 0f }
-                        .layerBackdrop(backdrop)
-                )
-            }
         }
 
         // Tap the unobstructed video area to reveal/hide controls.
@@ -545,13 +501,3 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-private fun ViewGroup.findTextureViewDescendant(): TextureView? {
-    for (index in 0 until childCount) {
-        val child = getChildAt(index)
-        if (child is TextureView) return child
-        if (child is ViewGroup) {
-            child.findTextureViewDescendant()?.let { return it }
-        }
-    }
-    return null
-}
