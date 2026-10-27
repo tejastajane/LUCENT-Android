@@ -9,19 +9,25 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 
 /**
- * Real backdrop-based glass surface using Kyant0's Backdrop library.
- * The surface and reflections are neutral white/grey only; do not add color tints.
+ * A real Kyant0 Backdrop surface.
+ *
+ * The source must be a useful rendered backdrop (not a flat black placeholder).
+ * Keep this component neutral: no blue/cyan tint and no chromatic aberration.
  */
 @Composable
 fun GlassSurface(
@@ -37,13 +43,43 @@ fun GlassSurface(
             backdrop = backdrop,
             shape = { shape },
             effects = {
-                blur(14.dp.toPx())
-                // Neutral refraction: chromatic aberration is intentionally disabled.
-                lens(12.dp.toPx(), 7.dp.toPx())
+                // Keep the background legible; the lens performs the actual refraction.
+                vibrancy()
+                blur(2.dp.toPx())
+                lens(
+                    refractionHeight = 14.dp.toPx(),
+                    refractionAmount = 26.dp.toPx(),
+                    depthEffect = true,
+                    chromaticAberration = false
+                )
+            },
+            highlight = {
+                Highlight.Default.copy(
+                    width = 1.1.dp,
+                    blurRadius = 1.25.dp,
+                    alpha = 0.9f
+                )
+            },
+            shadow = {
+                Shadow(
+                    radius = 14.dp,
+                    offset = DpOffset(0.dp, 2.dp),
+                    color = Color.Black.copy(alpha = 0.42f),
+                    alpha = 0.95f
+                )
+            },
+            innerShadow = {
+                InnerShadow(
+                    radius = 2.dp,
+                    offset = DpOffset(0.dp, (-0.75).dp),
+                    color = Color.White.copy(alpha = 0.14f),
+                    alpha = 0.85f
+                )
             },
             onDrawSurface = {
+                // Neutral clear material; optical highlights come from Backdrop itself.
                 drawRect(Color.White.copy(alpha = surfaceAlpha))
-                drawRect(Color.Black.copy(alpha = 0.025f))
+                drawRect(Color.Black.copy(alpha = 0.018f))
             }
         ),
         content = content
@@ -59,7 +95,7 @@ fun GlassIconButton(
     selected: Boolean = false,
     onClick: () -> Unit
 ) {
-    val alpha = if (selected) 0.13f else 0.045f
+    val alpha = if (selected) 0.095f else 0.035f
     GlassSurface(
         backdrop = backdrop,
         modifier = modifier.size(48.dp).clickable(onClick = onClick),
