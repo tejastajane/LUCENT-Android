@@ -83,6 +83,8 @@ import androidx.documentfile.provider.DocumentFile
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.tejas.liquidplayer.ui.liquid.LiquidBottomTab
+import com.tejas.liquidplayer.ui.liquid.LiquidBottomTabs
 import com.tejas.liquidplayer.data.BrowseEntry
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
@@ -647,27 +649,21 @@ private fun BottomNavigation(
         Icons.Default.Storage,
         Icons.Default.MoreHoriz
     )
-    GlassSurface(
-        backdrop,
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).height(62.dp),
-        cornerRadius = 40.dp,
-        surfaceAlpha = 0.07f
+    LiquidBottomTabs(
+        selectedTabIndex = selectedTab,
+        onTabSelected = onTabSelected,
+        backdrop = backdrop,
+        tabsCount = navItems.size,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Row(Modifier.fillMaxSize().padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
-            navItems.forEachIndexed { index, icon ->
-                Box(
-                    Modifier.weight(1f).fillMaxSize().padding(horizontal = 2.dp).clip(RoundedCornerShape(40.dp))
-                        .background(if (selectedTab == index) Color.White.copy(alpha = 0.12f) else Color.Transparent)
-                        .clickable { onTabSelected(index) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = listOf("Videos", "Folder", "Browse", "More")[index],
-                        tint = if (selectedTab == index) Color.White else Color(0xFF8F8F8F),
-                        modifier = Modifier.size(25.dp)
-                    )
-                }
+        navItems.forEachIndexed { index, icon ->
+            LiquidBottomTab(onClick = { onTabSelected(index) }) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = listOf("Videos", "Folder", "Browse", "More")[index],
+                    tint = if (selectedTab == index) Color.White else Color(0xFF9A9A9A),
+                    modifier = Modifier.size(25.dp)
+                )
             }
         }
     }

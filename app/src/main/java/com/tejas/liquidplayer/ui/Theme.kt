@@ -1,6 +1,8 @@
 package com.tejas.liquidplayer.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -24,8 +26,11 @@ private val NeutralDarkScheme = darkColorScheme(
 
 @Composable
 fun LiquidPlayerTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = NeutralDarkScheme,
-        content = content
-    )
+    MaterialTheme(colorScheme = NeutralDarkScheme) {
+        // The app uses custom Box/Backdrop surfaces rather than Material Surface.
+        // Set a visible default for all unstyled text and icons on the AMOLED-black UI.
+        CompositionLocalProvider(LocalContentColor provides NeutralDarkScheme.onSurface) {
+            content()
+        }
+    }
 }
