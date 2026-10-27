@@ -117,14 +117,12 @@ fun MainLibraryUi(
 ) {
     val backdrop = rememberLayerBackdrop()
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        // Capture a neutral black surface behind the actual Kyant0 backdrop controls.
+        // Record the real library UI, not an empty black placeholder. The bottom tabs are
+        // overlaid on this full-height source so the content continues beneath the glass.
         Box(
-            Modifier.fillMaxSize().layerBackdrop(backdrop).background(Color.Black)
-        )
-        Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+            Modifier.fillMaxSize().background(Color.Black).layerBackdrop(backdrop)
         ) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 when (selectedTab) {
                     0 -> VideosScreen(
                         backdrop, videos, hasVideoPermission, onRequestMediaPermission,
@@ -154,8 +152,13 @@ fun MainLibraryUi(
                     )
                 }
             }
-            BottomNavigation(backdrop, selectedTab, onTabSelected)
         }
+        BottomNavigation(
+            backdrop,
+            selectedTab,
+            onTabSelected,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+        )
     }
 }
 
