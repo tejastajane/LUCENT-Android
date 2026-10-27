@@ -8,6 +8,13 @@ import android.os.Build
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,7 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun LiquidPlayerApp() {
+fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
     val context = LocalContext.current
     val repository = remember(context) { VideoRepository(context.contentResolver) }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
@@ -107,77 +114,65 @@ fun LiquidPlayerApp() {
         }
     }
 
-    if (selectedVideo != null) {
-        VideoPlayerScreen(
-            video = selectedVideo!!,
-            onClose = { selectedVideo = null },
-            hardwareAcceleration = hardwareAcceleration,
-            gesturesEnabled = gesturesEnabled
-        )
-    } else {
-        MainLibraryUi(
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
-            videos = videos,
-            hasVideoPermission = hasVideoPermission,
-            onRequestMediaPermission = {
-                val permissions = when {
-                    Build.VERSION.SDK_INT >= 34 -> arrayOf(
-                        Manifest.permission.READ_MEDIA_VIDEO,
-                        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
-                    )
-                    Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
-                    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                }
-                mediaPermissionLauncher.launch(permissions)
-            },
-            selectedFolder = selectedFolder,
-            onFolderSelected = { folder ->
-                selectedFolder = folder
-                selectedTab = 0
-            },
-            storageTreeUri = storageTreeUri,
-            browsePath = browsePath,
-            browseEntries = browseEntries,
-            onChooseStorageFolder = { treePicker.launch(storageTreeUri) },
-            onBrowseBack = { browsePath = browsePath.dropLast(1) },
-            onBrowseEntry = { entry ->
-                if (entry.isDirectory) {
-                    browsePath = browsePath + entry.name
-                } else {
-                    val isVideo = entry.mimeType?.startsWith("video/") == true ||
-                        entry.name.substringAfterLast('.', "").lowercase() in setOf("mkv", "mp4", "mov", "avi", "webm", "m4v", "3gp", "ts", "wmv", "flv", "mpg", "mpeg")
-                    if (isVideo) {
-                        selectedVideo = VideoItem(
-                            id = entry.uri.toString().hashCode().toLong(),
-                            uri = entry.uri,
-                            name = entry.name,
-                            relativePath = "Storage browser/",
-                            durationMs = 0L,
-                            sizeBytes = entry.sizeBytes,
-                            dateAddedSeconds = System.currentTimeMillis() / 1000L,
-                            mimeType = entry.mimeType
+    AnimatedContent(
+        targetState = selectedVideo,
+        transitionSpec = {
+            if (targetState == null) {
+                (slideInHorizontally(tween(280)) { -it / 3 } + fadeIn(tween(180))) togetherWith
+                    (slideOutHorizontally(tween(240)) { it / 4 } + fadeOut(tween(120)))
+            } else {
+                (slideInHorizontally(tween(280)) { it } + fadeIn(tween(180))) togetherWith
+                    (slideOutHorizontally(tween(240)) { -it / 4 } + fadeOut(tween(120)))
+            }
+        },
+        label = "library-player-transition"
+    ) { activeVideo ->
+        if (activeVideo != null) {
+            LiquidPlayerTheme(darkTheme = true) {
+                VideoPlayerScreen(
+                    video = activeVideo, onClose = { selectedVideo = null },
+                    hardwareAcceleration = hardwareAcceleration, gesturesEnabled = gesturesEnabled
+                )
+            }
+        } else {
+            MainLibraryUi(
+                selectedTab = selectedTab, onTabSelected = { selectedTab = it }, videos = videos,
+                hasVideoPermission = hasVideoPermission,
+                onRequestMediaPermission = {
+                    val permissions = when {
+                        Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                        Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+                        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    mediaPermissionLauncher.launch(permissions)
+                },
+                selectedFolder = selectedFolder,
+                onFolderSelected = { folder -> selectedFolder = folder; selectedTab = 0 },
+                storageTreeUri = storageTreeUri, browsePath = browsePath, browseEntries = browseEntries,
+                onChooseStorageFolder = { treePicker.launch(storageTreeUri) },
+                onBrowseBack = { browsePath = browsePath.dropLast(1) },
+                onBrowseEntry = { entry ->
+                    if (entry.isDirectory) browsePath = browsePath + entry.name
+                    else {
+                        val isVideo = entry.mimeType?.startsWith("video/") == true ||
+                            entry.name.substringAfterLast('.', "").lowercase() in setOf("mkv", "mp4", "mov", "avi", "webm", "m4v", "3gp", "ts", "wmv", "flv", "mpg", "mpeg")
+                        if (isVideo) selectedVideo = VideoItem(
+                            id = entry.uri.toString().hashCode().toLong(), uri = entry.uri, name = entry.name,
+                            relativePath = "Storage browser/", durationMs = 0L, sizeBytes = entry.sizeBytes,
+                            dateAddedSeconds = System.currentTimeMillis() / 1000L, mimeType = entry.mimeType
                         )
                     }
-                }
-            },
-            onPlay = { selectedVideo = it },
-            onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
-            hardwareAcceleration = hardwareAcceleration,
-            onHardwareAccelerationChanged = {
-                hardwareAcceleration = it
-                preferences.edit().putBoolean("hardware_acceleration", it).apply()
-            },
-            gesturesEnabled = gesturesEnabled,
-            onGesturesEnabledChanged = {
-                gesturesEnabled = it
-                preferences.edit().putBoolean("gestures_enabled", it).apply()
-            },
-            onRescan = {
-                hasVideoPermission = hasMediaPermission(context)
-                mediaRefreshToken++
-            }
-        )
+                },
+                onPlay = { selectedVideo = it },
+                onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
+                hardwareAcceleration = hardwareAcceleration,
+                onHardwareAccelerationChanged = { hardwareAcceleration = it; preferences.edit().putBoolean("hardware_acceleration", it).apply() },
+                gesturesEnabled = gesturesEnabled,
+                onGesturesEnabledChanged = { gesturesEnabled = it; preferences.edit().putBoolean("gestures_enabled", it).apply() },
+                isDarkTheme = isDarkTheme, onThemeChanged = onThemeChanged,
+                onRescan = { hasVideoPermission = hasMediaPermission(context); mediaRefreshToken++ }
+            )
+        }
     }
 }
 

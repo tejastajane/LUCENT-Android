@@ -169,7 +169,7 @@ fun VideoPlayerScreen(
 
     LaunchedEffect(video.uri, controller, attachedController) {
         if (attachedController !== controller) return@LaunchedEffect
-        controller.play(video.uri)
+        controller.play(video.uri)?.let { playbackError = it }
         while (isActive) {
             positionMs = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
             val mediaLength = runCatching { controller.player.length }.getOrDefault(0L)
@@ -189,8 +189,8 @@ fun VideoPlayerScreen(
                 MediaPlayer.Event.Playing ->
                     mainHandler.post { playbackError = null }
                 MediaPlayer.Event.EncounteredError -> mainHandler.post {
-                    playbackError = "libVLC could not open or decode this video. Try disabling hardware acceleration in More."
-                    Log.e("LiquidPlayer", "libVLC playback error for ${video.uri}")
+                    playbackError = "libVLC couldn't read or decode this file. Try another local video; details are in the LiquidPlayer/VLC log."
+                    Log.e("LiquidPlayer/VLC", "libVLC playback error for ${video.uri}")
                 }
                 else -> Unit
             }

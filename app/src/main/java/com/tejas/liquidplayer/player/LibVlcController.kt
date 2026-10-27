@@ -2,6 +2,8 @@ package com.tejas.liquidplayer.player
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.util.Log
 import com.tejas.liquidplayer.data.TrackOption
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
@@ -9,12 +11,13 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
 /**
- * Owns the libVLC native engine and exposes a small UI-focused playback API.
- * All media URIs are content URIs or SAF URIs; no unsafe filesystem path conversion is used.
+ * Owns the libVLC native engine. Provider URIs are opened by Android and passed as
+ * file descriptors, rather than asking VLC's location parser to read content:// itself.
  */
 class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
+    private val appContext = context.applicationContext
     private val libVlc = LibVLC(
-        context.applicationContext,
+        appContext,
         arrayListOf(
             "--audio-time-stretch",
             "--no-drop-late-frames",
@@ -25,6 +28,7 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     val player = MediaPlayer(libVlc)
     private var viewsAttached = false
     private var released = false
+    private var contentDescriptor: ParcelFileDescriptor? = null
 
     fun attach(layout: VLCVideoLayout) {
         if (!viewsAttached && !released) {
@@ -33,11 +37,31 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         }
     }
 
-    fun play(uri: Uri) {
-        if (released) return
-        // Use libVLC's own URI playback path. It creates the Media, assigns it, releases
-        // the temporary reference, and starts playback in the order expected by libVLC.
-        player.play(uri)
+    /** Returns null if playback was queued, or an error message for synchronous access failures. */
+    fun play(uri: Uri): String? {
+        if (released) return "The player has already been closed."
+        return try {
+            runCatching { player.stop() }
+            contentDescriptor?.close()
+            contentDescriptor = null
+            val media = when (uri.scheme?.lowercase()) {
+                "content" -> {
+                    val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r")
+                        ?: error("Android returned no file descriptor for this video.")
+                    contentDescriptor = descriptor
+                    Media(libVlc, descriptor.fileDescriptor)
+                }
+                "file" -> Media(libVlc, uri.path ?: error("The video file path is empty."))
+                else -> Media(libVlc, uri)
+            }
+            player.play(media)
+            null
+        } catch (error: Exception) {
+            runCatching { contentDescriptor?.close() }
+            contentDescriptor = null
+            Log.e("LiquidPlayer/VLC", "Unable to start media: $uri", error)
+            "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
+        }
     }
 
     fun togglePlayPause() {
@@ -79,9 +103,7 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
 
     fun addExternalSubtitle(uri: Uri) {
         if (released) return
-        runCatching {
-            player.addSlave(0, uri, true)
-        }
+        runCatching { player.addSlave(0, uri, true) }
     }
 
     fun close() {
@@ -91,6 +113,8 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         if (viewsAttached) runCatching { player.detachViews() }
         viewsAttached = false
         runCatching { player.release() }
+        runCatching { contentDescriptor?.close() }
+        contentDescriptor = null
         runCatching { libVlc.release() }
     }
 }

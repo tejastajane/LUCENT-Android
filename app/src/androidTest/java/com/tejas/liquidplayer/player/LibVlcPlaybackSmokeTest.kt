@@ -1,11 +1,13 @@
 package com.tejas.liquidplayer.player
 
-import android.net.Uri
+import android.content.ContentValues
+import android.provider.MediaStore
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tejas.liquidplayer.debug.PlaybackHostActivity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,50 +20,57 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class LibVlcPlaybackSmokeTest {
     @Test
-    fun localVideoOpensAndPlaybackTimeAdvances() {
+    fun mediaStoreContentUriOpensAndPlaybackTimeAdvances() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val fixture = File(context.cacheDir, "liquidplayer-smoke.mp4")
         assertTrue("Smoke-test MP4 wasn't copied into app cache", fixture.exists() && fixture.length() > 0L)
 
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, "liquidplayer-smoke.mp4")
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/LiquidPlayerTest")
+        }
+        val contentUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+        assertNotNull("Could not create a MediaStore test video", contentUri)
+
         val scenario = ActivityScenario.launch(PlaybackHostActivity::class.java)
         var controller: LibVlcController? = null
-        val playbackResult = AtomicInteger(0) // 1 = playing, -1 = decode/open error
+        val playbackResult = AtomicInteger(0)
         val playbackEvent = CountDownLatch(1)
 
         try {
+            context.contentResolver.openOutputStream(contentUri!!, "w").use { output ->
+                assertNotNull("Could not write the MediaStore test video", output)
+                fixture.inputStream().use { input -> input.copyTo(output!!) }
+            }
             scenario.onActivity { activity ->
                 val instance = LibVlcController(activity, hardwareAcceleration = false)
                 controller = instance
                 instance.attach(activity.videoLayout)
                 instance.player.setEventListener(MediaPlayer.EventListener { event ->
                     when (event.type) {
-                        MediaPlayer.Event.Playing -> {
-                            playbackResult.set(1)
-                            playbackEvent.countDown()
-                        }
-                        MediaPlayer.Event.EncounteredError -> {
-                            playbackResult.set(-1)
-                            playbackEvent.countDown()
-                        }
+                        MediaPlayer.Event.Playing -> { playbackResult.set(1); playbackEvent.countDown() }
+                        MediaPlayer.Event.EncounteredError -> { playbackResult.set(-1); playbackEvent.countDown() }
                     }
                 })
-                instance.play(Uri.fromFile(fixture))
+                val immediateError = instance.play(contentUri)
+                if (immediateError != null) {
+                    playbackResult.set(-1)
+                    playbackEvent.countDown()
+                    throw AssertionError(immediateError)
+                }
             }
 
-            assertTrue(
-                "libVLC did not emit Playing or EncounteredError within 25 seconds",
-                playbackEvent.await(25, TimeUnit.SECONDS)
-            )
-            assertEquals("libVLC emitted a playback error for the generated MP4", 1, playbackResult.get())
-
+            assertTrue("libVLC did not emit Playing or EncounteredError within 25 seconds", playbackEvent.await(25, TimeUnit.SECONDS))
+            assertEquals("libVLC emitted a playback error for the MediaStore Uri", 1, playbackResult.get())
             val player = requireNotNull(controller).player
             val firstTime = player.time
             Thread.sleep(900)
-            val laterTime = player.time
-            assertTrue("Video playback time did not advance ($firstTime -> $laterTime)", laterTime > firstTime)
+            assertTrue("Video playback time did not advance ($firstTime -> ${player.time})", player.time > firstTime)
         } finally {
             scenario.onActivity { controller?.close() }
             scenario.close()
+            context.contentResolver.delete(contentUri!!, null, null)
         }
     }
 }

@@ -6,6 +6,13 @@ import android.os.Environment
 import android.os.StatFs
 import android.text.format.Formatter
 import android.util.Size
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -113,17 +120,32 @@ fun MainLibraryUi(
     onHardwareAccelerationChanged: (Boolean) -> Unit,
     gesturesEnabled: Boolean,
     onGesturesEnabledChanged: (Boolean) -> Unit,
+    isDarkTheme: Boolean,
+    onThemeChanged: (Boolean) -> Unit,
     onRescan: () -> Unit
 ) {
     val backdrop = rememberLayerBackdrop()
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Record the real library UI, not an empty black placeholder. The bottom tabs are
         // overlaid on this full-height source so the content continues beneath the glass.
         Box(
             Modifier.fillMaxSize().layerBackdrop(backdrop).background(Color.Black)
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                when (selectedTab) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        if (targetState > initialState) {
+                            (slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(170))) togetherWith
+                                (slideOutHorizontally(tween(240)) { -it / 4 } + fadeOut(tween(120)))
+                        } else {
+                            (slideInHorizontally(tween(260)) { -it / 3 } + fadeIn(tween(170))) togetherWith
+                                (slideOutHorizontally(tween(240)) { it / 4 } + fadeOut(tween(120)))
+                        }
+                    },
+                    label = "library-tab-transition"
+                ) { targetTab ->
+                when (targetTab) {
                     0 -> VideosScreen(
                         backdrop, videos, hasVideoPermission, onRequestMediaPermission,
                         selectedFolder, onClearFolder = { onFolderSelected("") }, onPlay = onPlay,
@@ -147,9 +169,12 @@ fun MainLibraryUi(
                         onHardwareAccelerationChanged = onHardwareAccelerationChanged,
                         gesturesEnabled = gesturesEnabled,
                         onGesturesEnabledChanged = onGesturesEnabledChanged,
+                        isDarkTheme = isDarkTheme,
+                        onThemeChanged = onThemeChanged,
                         onRescan = onRescan,
                         onChooseVideoFile = onChooseVideoFile
                     )
+                }
                 }
             }
         }
@@ -196,10 +221,10 @@ private fun VideosScreen(
         ) {
             Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             IconButton(onClick = { searchVisible = !searchVisible; if (!searchVisible) query = "" }) {
-                Icon(Icons.Default.Search, contentDescription = "Search videos", tint = Color.White)
+                Icon(Icons.Default.Search, contentDescription = "Search videos", tint = MaterialTheme.colorScheme.onBackground)
             }
             IconButton(onClick = { category = if (category == "All") "Recent" else "All" }) {
-                Icon(Icons.Default.Tune, contentDescription = "Sort videos", tint = Color.White)
+                Icon(Icons.Default.Tune, contentDescription = "Sort videos", tint = MaterialTheme.colorScheme.onBackground)
             }
         }
         if (searchVisible) {
@@ -208,14 +233,14 @@ private fun VideosScreen(
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
                 singleLine = true,
-                placeholder = { Text("Search videos", color = Color.Gray) },
+                placeholder = { Text("Search videos", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 shape = RoundedCornerShape(18.dp)
             )
         }
         if (!selectedFolder.isNullOrBlank()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Folder: $selectedFolder", color = Color.LightGray, modifier = Modifier.weight(1f))
-                TextButton(onClick = onClearFolder) { Text("Clear", color = Color.White) }
+                Text("Folder: $selectedFolder", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearFolder) { Text("Clear", color = MaterialTheme.colorScheme.onBackground) }
             }
         }
         Row(
@@ -228,10 +253,10 @@ private fun VideosScreen(
                     onClick = { category = label },
                     label = { Text(label) },
                     colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color.White.copy(alpha = 0.16f),
-                        selectedLabelColor = Color.White,
-                        containerColor = Color(0xFF101010),
-                        labelColor = Color.LightGray
+                        selectedContainerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.16f),
+                        selectedLabelColor = MaterialTheme.colorScheme.onBackground,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 )
             }
@@ -293,13 +318,13 @@ private fun FoldersScreen(
                                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Folder, null, tint = Color(0xFFD2D2D2), modifier = Modifier.size(54.dp))
+                                Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(54.dp))
                                 Spacer(Modifier.width(16.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                                    Text("${folderVideos.size} media files", color = Color.LightGray, style = MaterialTheme.typography.bodyMedium)
+                                    Text("${folderVideos.size} media files", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                                 }
-                                Icon(Icons.Default.ViewList, contentDescription = "Open folder", tint = Color.Gray)
+                                Icon(Icons.Default.ViewList, contentDescription = "Open folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -335,32 +360,32 @@ private fun BrowseScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Browse", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onChooseFolder) { Icon(Icons.Default.FolderOpen, contentDescription = "Choose storage folder", tint = Color.White) }
+            IconButton(onClick = onChooseFolder) { Icon(Icons.Default.FolderOpen, contentDescription = "Choose storage folder", tint = MaterialTheme.colorScheme.onBackground) }
         }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF080808))) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Storage, null, tint = Color.White, modifier = Modifier.size(34.dp))
+                    Icon(Icons.Default.Storage, null, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(34.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Internal storage", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                        Text(Formatter.formatFileSize(context, storage.first) + " total", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                        Text(Formatter.formatFileSize(context, storage.first) + " total", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(Formatter.formatFileSize(context, used) + " used", style = MaterialTheme.typography.bodyMedium)
-                        Text(Formatter.formatFileSize(context, storage.second) + " free", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                        Text(Formatter.formatFileSize(context, storage.second) + " free", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.12f))) {
-                    Box(Modifier.fillMaxWidth(used.toFloat() / storage.first.coerceAtLeast(1L).toFloat()).height(5.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.8f)))
+                Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f))) {
+                    Box(Modifier.fillMaxWidth(used.toFloat() / storage.first.coerceAtLeast(1L).toFloat()).height(5.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)))
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Browse folders and files", color = Color.LightGray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Text("Browse folders and files", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Button(
                         onClick = onChooseFolder,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background)
                     ) { Text(if (treeUri == null) "Open storage" else "Change folder") }
                 }
             }
@@ -369,16 +394,16 @@ private fun BrowseScreen(
             Text("Video folders", Modifier.padding(start = 20.dp, top = 18.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
             val folderGroups = videos.groupBy { it.folderName }.toList().sortedBy { it.first }
             if (folderGroups.isEmpty()) {
-                Text("Choose Open storage to browse directories on your device.", Modifier.padding(horizontal = 22.dp, vertical = 12.dp), color = Color.LightGray)
+                Text("Choose Open storage to browse directories on your device.", Modifier.padding(horizontal = 22.dp, vertical = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(folderGroups, key = { it.first }) { (name, grouped) ->
                         Column(Modifier.fillMaxWidth().clickable { onPlay(grouped.first()) }) {
                             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Folder, null, tint = Color.LightGray, modifier = Modifier.size(28.dp))
+                                Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
                                 Spacer(Modifier.width(12.dp))
                                 Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${grouped.size}", color = Color.Gray)
+                                Text("${grouped.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -387,10 +412,10 @@ private fun BrowseScreen(
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (path.isNotEmpty()) {
-                    TextButton(onClick = onBack) { Text("‹ Back", color = Color.White) }
+                    TextButton(onClick = onBack) { Text("‹ Back", color = MaterialTheme.colorScheme.onBackground) }
                     Spacer(Modifier.width(8.dp))
                 }
-                Text((path.lastOrNull() ?: "Storage root"), color = Color.LightGray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text((path.lastOrNull() ?: "Storage root"), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (entries.isEmpty()) {
                 EmptyState(backdrop, "This folder is empty", "Choose another folder or open a video directly.", "Change folder", onChooseFolder)
@@ -402,11 +427,11 @@ private fun BrowseScreen(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { onEntry(entry) }.padding(horizontal = 12.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(icon, null, tint = Color.LightGray, modifier = Modifier.size(30.dp))
+                            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(if (entry.isDirectory) "Folder" else if (entry.sizeBytes > 0L) Formatter.formatFileSize(context, entry.sizeBytes) else (entry.mimeType ?: "File"), color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                                Text(if (entry.isDirectory) "Folder" else if (entry.sizeBytes > 0L) Formatter.formatFileSize(context, entry.sizeBytes) else (entry.mimeType ?: "File"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -423,6 +448,8 @@ private fun MoreScreen(
     onHardwareAccelerationChanged: (Boolean) -> Unit,
     gesturesEnabled: Boolean,
     onGesturesEnabledChanged: (Boolean) -> Unit,
+    isDarkTheme: Boolean,
+    onThemeChanged: (Boolean) -> Unit,
     onRescan: () -> Unit,
     onChooseVideoFile: () -> Unit
 ) {
@@ -430,11 +457,11 @@ private fun MoreScreen(
         Text("More", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 14.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(48.dp))
+                Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text("Liquid Player", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("A quiet, glassy player for your local media", color = Color.LightGray, style = MaterialTheme.typography.bodyMedium)
+                    Text("A quiet, glassy player for your local media", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -443,6 +470,11 @@ private fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                SettingsSection(backdrop, "Appearance", listOf(
+                    SettingItem(Icons.Default.Settings, "Dark theme", "Use the black AMOLED appearance", isDarkTheme, onThemeChanged)
+                ))
+            }
             item {
                 SettingsSection(backdrop, "Playback settings", listOf(
                     SettingItem(Icons.Default.Tune, "Hardware acceleration", "Use libVLC's hardware video decoder", hardwareAcceleration, onHardwareAccelerationChanged),
@@ -500,30 +532,30 @@ private data class ActionItem(
 @Composable
 private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<SettingItem>) {
     Column {
-        Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = Color.LightGray, style = MaterialTheme.typography.titleSmall)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF080808))) {
+        Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface)) {
             Column {
                 items.forEachIndexed { index, item ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(item.icon, null, tint = Color.LightGray, modifier = Modifier.size(24.dp))
+                        Icon(item.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(item.title)
-                            Text(item.description, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                            Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         }
                         Switch(
                             checked = item.checked,
                             onCheckedChange = item.onCheckedChange,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.Black,
-                                checkedTrackColor = Color.White,
-                                uncheckedThumbColor = Color.LightGray,
+                                checkedTrackColor = MaterialTheme.colorScheme.onBackground,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 uncheckedTrackColor = Color.DarkGray
                             )
                         )
                     }
                     if (index != items.lastIndex) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 50.dp, end = 14.dp).height(0.5.dp)) {
-                        drawLine(Color.White.copy(alpha = 0.10f), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = 1f)
+                        drawLine(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = 1f)
                     }
                 }
             }
@@ -534,21 +566,21 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
 @Composable
 private fun SettingsActionSection(backdrop: LayerBackdrop, title: String, items: List<ActionItem>) {
     Column {
-        Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = Color.LightGray, style = MaterialTheme.typography.titleSmall)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF080808))) {
+        Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface)) {
             Column {
                 items.forEach { item ->
                     Row(
                         Modifier.fillMaxWidth().clickable(onClick = item.onClick).padding(horizontal = 14.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(item.icon, null, tint = Color.LightGray, modifier = Modifier.size(24.dp))
+                        Icon(item.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(item.title)
-                            Text(item.description, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                            Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         }
-                        Text("›", color = Color.Gray, fontSize = 26.sp)
+                        Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 26.sp)
                     }
                 }
             }
@@ -573,13 +605,13 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.width(112.dp).height(70.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF171717)),
+            Modifier.width(112.dp).height(70.dp).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
             if (thumbnail != null) {
                 Image(thumbnail!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
             } else {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(30.dp))
+                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
             }
             Text(
                 formatDuration(item.durationMs),
@@ -598,7 +630,7 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
                     if (item.durationMs > 0L) formatDuration(item.durationMs) else null,
                     item.mimeType?.substringAfter('/')?.uppercase(Locale.ROOT)
                 ).filterNotNull().joinToString("  ·  "),
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -606,7 +638,7 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
             Text(item.folderName, color = Color(0xFFAAAAAA), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(5.dp))
-        Icon(Icons.Default.MoreHoriz, contentDescription = "Video options", tint = Color.Gray, modifier = Modifier.size(22.dp))
+        Icon(Icons.Default.MoreHoriz, contentDescription = "Video options", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -623,12 +655,12 @@ private fun EmptyState(
     Box(Modifier.fillMaxSize().padding(22.dp), contentAlignment = Alignment.Center) {
         Column(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Default.Movie, null, tint = Color.LightGray, modifier = Modifier.size(42.dp))
+                Icon(Icons.Default.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(42.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text(message, color = Color.LightGray, style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = onAction, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) { Text(action) }
+                Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = onAction, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background)) { Text(action) }
                 if (secondaryAction != null && onSecondaryAction != null) {
-                    OutlinedButton(onClick = onSecondaryAction, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)) { Text(secondaryAction) }
+                    OutlinedButton(onClick = onSecondaryAction, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)) { Text(secondaryAction) }
                 }
             }
         }
@@ -660,7 +692,7 @@ private fun BottomNavigation(
                 Icon(
                     imageVector = icon,
                     contentDescription = listOf("Videos", "Folder", "Browse", "More")[index],
-                    tint = if (selectedTab == index) Color.White else Color(0xFF9A9A9A),
+                    tint = if (selectedTab == index) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(25.dp)
                 )
             }
