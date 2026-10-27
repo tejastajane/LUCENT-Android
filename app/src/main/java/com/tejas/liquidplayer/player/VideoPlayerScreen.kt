@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,7 +97,8 @@ private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Dis
 fun VideoPlayerScreen(
     video: VideoItem,
     onClose: () -> Unit,
-    hardwareAcceleration: Boolean
+    hardwareAcceleration: Boolean,
+    gesturesEnabled: Boolean
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -130,8 +133,14 @@ fun VideoPlayerScreen(
         }
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         windowController?.hide(WindowInsetsCompat.Type.systemBars())
+        val originalBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
         onDispose {
             windowController?.show(WindowInsetsCompat.Type.systemBars())
+            activity?.window?.let { window ->
+                val params = window.attributes
+                params.screenBrightness = originalBrightness
+                window.attributes = params
+            }
             if (activity != null) activity.requestedOrientation = originalOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             controller.close()
         }
@@ -175,12 +184,18 @@ fun VideoPlayerScreen(
 
         // Tap the unobstructed video area to reveal/hide controls.
         Box(
-            Modifier.fillMaxSize().clickable(
-                indication = null,
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-            ) {
-                controlsVisible = !controlsVisible
-                if (!controlsVisible) panel = PlayerPanel.None
+            Modifier.fillMaxSize().pointerInput(gesturesEnabled) {
+                detectTapGestures(
+                    onTap = {
+                        controlsVisible = !controlsVisible
+                        if (!controlsVisible) panel = PlayerPanel.None
+                    },
+                    onDoubleTap = if (gesturesEnabled) { offset ->
+                        controller.seekBy(if (offset.x < size.width / 2f) -10_000L else 10_000L)
+                        controlsVisible = true
+                        panel = PlayerPanel.None
+                    } else null
+                )
             }
         )
 

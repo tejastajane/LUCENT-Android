@@ -28,7 +28,7 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
 
     fun attach(layout: VLCVideoLayout) {
         if (!viewsAttached && !released) {
-            player.attachViews(layout, null, false, false)
+            player.attachViews(layout, null, true, true)
             viewsAttached = true
         }
     }

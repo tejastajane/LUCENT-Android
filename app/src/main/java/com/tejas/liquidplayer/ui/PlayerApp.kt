@@ -111,7 +111,8 @@ fun LiquidPlayerApp() {
         VideoPlayerScreen(
             video = selectedVideo!!,
             onClose = { selectedVideo = null },
-            hardwareAcceleration = hardwareAcceleration
+            hardwareAcceleration = hardwareAcceleration,
+            gesturesEnabled = gesturesEnabled
         )
     } else {
         MainLibraryUi(
