@@ -39,9 +39,11 @@ class LibVlcPlaybackSmokeTest {
         val playbackEvent = CountDownLatch(1)
 
         try {
-            context.contentResolver.openOutputStream(contentUri, "w").use { output ->
-                assertNotNull("Could not write the MediaStore test video", output)
-                fixture.inputStream().use { input -> input.copyTo(output!!) }
+            val outputStream = requireNotNull(
+                context.contentResolver.openOutputStream(contentUri, "w")
+            ) { "Could not write the MediaStore test video" }
+            outputStream.use { output ->
+                fixture.inputStream().use { input -> input.copyTo(output) }
             }
             scenario.onActivity { activity ->
                 val instance = LibVlcController(activity, hardwareAcceleration = false)
