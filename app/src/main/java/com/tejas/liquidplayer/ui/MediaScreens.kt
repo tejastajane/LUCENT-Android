@@ -19,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.nestedScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,9 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -79,12 +78,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -133,33 +133,26 @@ fun MainLibraryUi(
     onRescan: () -> Unit
 ) {
     val backdrop = rememberLayerBackdrop()
-    val videosListState = rememberLazyListState()
-    var showRecentPlay by remember { mutableStateOf(true) }
-
-    LaunchedEffect(selectedTab, videosListState) {
-        var previousIndex = videosListState.firstVisibleItemIndex
-        var previousOffset = videosListState.firstVisibleItemScrollOffset
-        if (selectedTab == 0) showRecentPlay = true
-        snapshotFlow {
-            videosListState.firstVisibleItemIndex to videosListState.firstVisibleItemScrollOffset
-        }.collect { current ->
-            if (selectedTab == 0) {
-                val movingDown = current.first > previousIndex ||
-                    (current.first == previousIndex && current.second > previousOffset + 2)
-                val movingUp = current.first < previousIndex ||
-                    (current.first == previousIndex && current.second < previousOffset - 2)
-                when {
-                    current.first == 0 && current.second <= 2 -> showRecentPlay = true
-                    movingDown -> showRecentPlay = false
-                    movingUp -> showRecentPlay = true
+    val showRecentPlayState = remember { mutableStateOf(true) }
+    val recentPlayScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    when {
+                        available.y < -1f -> showRecentPlayState.value = false
+                        available.y > 1f -> showRecentPlayState.value = true
+                    }
                 }
+                return Offset.Zero
             }
-            previousIndex = current.first
-            previousOffset = current.second
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(
+        Modifier.fillMaxSize()
+            .nestedScroll(recentPlayScrollConnection)
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         // Record the real library UI, not an empty black placeholder. The bottom tabs are
         // overlaid on this full-height source so the content continues beneath the glass.
         Box(
@@ -183,7 +176,7 @@ fun MainLibraryUi(
                     0 -> VideosScreen(
                         backdrop, videos, hasVideoPermission, onRequestMediaPermission,
                         selectedFolder, onClearFolder = { onFolderSelected("") }, onPlay = onPlay,
-                        onChooseVideoFile = onChooseVideoFile, listState = videosListState
+                        onChooseVideoFile = onChooseVideoFile
                     )
                     1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected)
                     2 -> BrowseScreen(
@@ -215,7 +208,7 @@ fun MainLibraryUi(
         // The recent-play capsule is composed UNDER the nav bar in z-order. As it hides,
         // it slides down behind the liquid tabs, like the reference's compact capture pill.
         AnimatedVisibility(
-            visible = selectedTab == 0 && recentVideo != null && showRecentPlay,
+            visible = recentVideo != null && showRecentPlayState.value,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
@@ -270,8 +263,7 @@ private fun VideosScreen(
     selectedFolder: String?,
     onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
-    onChooseVideoFile: () -> Unit,
-    listState: LazyListState
+    onChooseVideoFile: () -> Unit
 ) {
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -356,7 +348,6 @@ private fun VideosScreen(
             )
         } else {
             LazyColumn(
-                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
