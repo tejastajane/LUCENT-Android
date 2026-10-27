@@ -532,7 +532,7 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
 private fun SettingsActionSection(backdrop: LayerBackdrop, title: String, items: List<ActionItem>) {
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = Color.LightGray, style = MaterialTheme.typography.titleSmall)
-        GlassSurface(backdrop, Modifier.fillMaxWidth(), cornerRadius = 22.dp, surfaceAlpha = 0.045f) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF080808))) {
             Column {
                 items.forEach { item ->
                     Row(

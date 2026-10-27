@@ -201,7 +201,7 @@ fun LiquidBottomTabs(
                     }
                     .drawBackdrop(
                         backdrop = backdrop,
-                        shape = { Capsule() },
+                        shape = { RoundedCornerShape(50) },
                         effects = {
                             val progress = dampedDragAnimation.pressProgress
                             vibrancy()
@@ -239,7 +239,7 @@ fun LiquidBottomTabs(
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                    shape = { Capsule() },
+                    shape = { RoundedCornerShape(50) },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
                         lens(
