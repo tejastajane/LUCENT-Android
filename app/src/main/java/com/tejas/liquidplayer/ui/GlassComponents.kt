@@ -57,7 +57,8 @@ fun GlassSurface(
                 )
             },
             highlight = {
-                Highlight.Default.copy(
+                // The library's GlassPlayground uses a plain, neutral highlight.
+                Highlight.Plain.copy(
                     width = 1.1.dp,
                     blurRadius = 1.25.dp,
                     alpha = 0.9f
