@@ -96,7 +96,9 @@ fun LiquidBottomTabs(
 
         val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
         val animationScope = rememberCoroutineScope()
-        var currentIndex by remember(selectedTabIndex) {
+        // Keep the animation state stable while the selected tab changes;
+        // keying this state by selectedTabIndex would reset it and skip the slide.
+        var currentIndex by remember {
             mutableIntStateOf(selectedTabIndex)
         }
         val dampedDragAnimation = remember(animationScope) {
