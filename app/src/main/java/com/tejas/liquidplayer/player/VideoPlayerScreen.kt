@@ -1,5 +1,12 @@
 package com.tejas.liquidplayer.player
+
+import android.graphics.Bitmap
+import android.view.TextureView
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.key
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.isActive
 
 import android.app.Activity
@@ -107,8 +114,11 @@ fun VideoPlayerScreen(
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val backdrop = rememberLayerBackdrop()
 
-    // Do not start media until the native VLC views are attached to the AndroidView.
-    // The attached-controller key also handles the hardware-acceleration setting recreating VLC.
+    // Keep VLC's native TextureView outside Compose graphics/backdrop layers. A separate
+    // low-opacity frame copy supplies a sample for glass controls without layering VLC output.
+    var videoTextureView by remember { mutableStateOf<TextureView?>(null) }
+    var backdropFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var backdropFrameVersion by remember { mutableIntStateOf(0) }
     var attachedController by remember { mutableStateOf<LibVlcController?>(null) }
 
     var panel by remember { mutableStateOf(PlayerPanel.None) }
@@ -173,35 +183,72 @@ fun VideoPlayerScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        // Keep the live VLC view inside its own recorded scene and use the stable AndroidView
-        // composition path recommended for TextureView-backed video. The 0.999 alpha is
-        // intentional: alpha=1 can bypass the backdrop capture path on some devices.
-        Box(
-            Modifier.fillMaxSize().background(Color.Black).layerBackdrop(backdrop)
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    VLCVideoLayout(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        post {
-                            controller.attach(this)
-                            attachedController = controller
-                        }
+        // VLC must render directly to its native TextureView. Wrapping it in layerBackdrop
+        // or an alpha graphics layer can make video output black on real devices.
+        AndroidView(
+            factory = { ctx ->
+                VLCVideoLayout(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    post {
+                        controller.attach(this)
+                        videoTextureView = findTextureViewDescendant()
+                        attachedController = controller
                     }
-                },
-                update = { layout ->
-                    if (attachedController !== controller) {
-                        layout.post {
-                            controller.attach(layout)
-                            attachedController = controller
-                        }
+                }
+            },
+            update = { layout ->
+                if (attachedController !== controller) {
+                    layout.post {
+                        controller.attach(layout)
+                        videoTextureView = layout.findTextureViewDescendant()
+                        attachedController = controller
                     }
-                },
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.999f }
-            )
+                } else if (videoTextureView == null) {
+                    videoTextureView = layout.findTextureViewDescendant()
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Capture a small preview for backdrop sampling. layerBackdrop precedes output
+        // opacity so the recorded pixels remain full-strength while the duplicate is subtle.
+        LaunchedEffect(videoTextureView) {
+            var reusableBitmap: Bitmap? = null
+            while (isActive) {
+                val texture = videoTextureView
+                if (texture != null && texture.isAvailable && texture.width > 0 && texture.height > 0) {
+                    val scale = minOf(1f, 640f / maxOf(texture.width, texture.height).toFloat())
+                    val width = (texture.width * scale).toInt().coerceAtLeast(1)
+                    val height = (texture.height * scale).toInt().coerceAtLeast(1)
+                    if (reusableBitmap == null || reusableBitmap.width != width || reusableBitmap.height != height) {
+                        reusableBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    }
+                    val copied = runCatching { texture.getBitmap(reusableBitmap) }.getOrNull()
+                    if (copied != null) {
+                        backdropFrame = copied
+                        backdropFrameVersion++
+                    }
+                }
+                delay(200L)
+            }
+        }
+
+        val frame = backdropFrame
+        if (frame != null) {
+            key(backdropFrameVersion) {
+                Image(
+                    bitmap = frame.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .layerBackdrop(backdrop)
+                        .graphicsLayer { alpha = 0.01f }
+                )
+            }
         }
 
         // Tap the unobstructed video area to reveal/hide controls.
@@ -494,6 +541,17 @@ private fun neutralSliderColors() = SliderDefaults.colors(
 
 private fun togglePanel(current: PlayerPanel, requested: PlayerPanel): PlayerPanel =
     if (current == requested) PlayerPanel.None else requested
+
+private fun ViewGroup.findTextureViewDescendant(): TextureView? {
+    for (index in 0 until childCount) {
+        val child = getChildAt(index)
+        if (child is TextureView) return child
+        if (child is ViewGroup) {
+            child.findTextureViewDescendant()?.let { return it }
+        }
+    }
+    return null
+}
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
