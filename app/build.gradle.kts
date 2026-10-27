@@ -13,6 +13,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {
@@ -59,4 +60,9 @@ dependencies {
     implementation("org.videolan.android:libvlc-all:3.7.7")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Run an actual local-media playback smoke test on an Android emulator in CI.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
