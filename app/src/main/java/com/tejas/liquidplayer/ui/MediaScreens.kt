@@ -531,6 +531,7 @@ private data class ActionItem(
 
 @Composable
 private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<SettingItem>) {
+    val dividerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f)
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface)) {
@@ -555,7 +556,7 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
                         )
                     }
                     if (index != items.lastIndex) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 50.dp, end = 14.dp).height(0.5.dp)) {
-                        drawLine(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = 1f)
+                        drawLine(dividerColor, androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = 1f)
                     }
                 }
             }
