@@ -43,14 +43,15 @@ fun GlassSurface(
             backdrop = backdrop,
             shape = { shape },
             effects = {
-                // Keep the background legible; the lens performs the actual refraction.
+                // Match Kyant0's GlassPlayground reset values: blur 0dp, height 0.2
+                // of half the element's minimum dimension, amount 0.2 of that dimension,
+                // and chromatic aberration off. The proportional lens scales naturally
+                // from small player buttons to larger panels.
                 vibrancy()
-                blur(2.dp.toPx())
-                // Match Kyant0's clear, glossy button recipe; keep dispersion off
-                // for the requested neutral white/grey glass.
+                blur(0.dp.toPx())
                 lens(
-                    refractionHeight = 12.dp.toPx(),
-                    refractionAmount = 24.dp.toPx(),
+                    refractionHeight = size.minDimension * 0.1f,
+                    refractionAmount = size.minDimension * 0.2f,
                     depthEffect = true,
                     chromaticAberration = false
                 )
