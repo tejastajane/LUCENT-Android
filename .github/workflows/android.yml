@@ -1,4 +1,4 @@
-name: Android build
+name: Android build and playback test
 
 on:
   push:
@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   build-debug-apk:
-    name: Build debug APK
+    name: Build APK and test libVLC playback
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -40,11 +40,50 @@ jobs:
       - name: Build Android debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Upload APK
+      - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: liquid-player-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Build instrumentation test APK
+        run: gradle --no-daemon --stacktrace :app:assembleDebugAndroidTest
+
+      - name: Generate short local video fixture
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x240:rate=24 \
+            -t 8 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -movflags +faststart liquidplayer-smoke.mp4
+
+      - name: Run libVLC playback smoke test on Android emulator
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb push liquidplayer-smoke.mp4 /data/local/tmp/liquidplayer-smoke.mp4
+            adb shell run-as com.tejas.liquidplayer mkdir -p cache
+            adb shell run-as com.tejas.liquidplayer cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
+            gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
+
+      - name: Upload Android test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquid-player-android-test-results
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: ignore
           retention-days: 14
