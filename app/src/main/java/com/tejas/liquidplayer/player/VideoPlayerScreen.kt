@@ -3,11 +3,12 @@ package com.tejas.liquidplayer.player
 import android.graphics.Bitmap
 import android.view.TextureView
 import androidx.compose.foundation.Image
-import androidx.compose.runtime.key
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.isActive
+import android.os.SystemClock
+import kotlin.math.roundToInt
 
 import android.app.Activity
 import android.content.Context
@@ -21,6 +22,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,7 +50,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
@@ -107,11 +108,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
-private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Display, Speed }
+private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed }
 
 @Composable
 fun VideoPlayerScreen(
     video: VideoItem,
+    playlist: List<VideoItem>,
+    onSelectVideo: (VideoItem) -> Unit,
     onClose: () -> Unit,
     hardwareAcceleration: Boolean,
     gesturesEnabled: Boolean
@@ -119,6 +122,9 @@ fun VideoPlayerScreen(
     val context = LocalContext.current
     val activity = context.findActivity()
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
+    val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
+    val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
+    val savedPositionMs = remember(video.uri, playerPreferences) { playerPreferences.getLong(progressKey, 0L) }
     val backdrop = rememberLayerBackdrop()
     val retryScope = rememberCoroutineScope()
     val cacheRetryAttempted = remember(controller, video.uri) { AtomicBoolean(false) }
@@ -133,21 +139,38 @@ fun VideoPlayerScreen(
     var panel by remember { mutableStateOf(PlayerPanel.None) }
     var controlsVisible by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(false) }
-    var playbackError by remember { mutableStateOf<String?>(null) }
-    var positionMs by remember { mutableLongStateOf(0L) }
-    var durationMs by remember { mutableLongStateOf(video.durationMs) }
-    var audioTracks by remember { mutableStateOf<List<TrackOption>>(emptyList()) }
-    var subtitleTracks by remember { mutableStateOf<List<TrackOption>>(emptyList()) }
-    var brightness by remember { mutableFloatStateOf(0.8f) }
-    var speed by remember { mutableFloatStateOf(1f) }
-    var volume by remember { mutableIntStateOf(100) }
+    var playbackError by remember(video.uri) { mutableStateOf<String?>(null) }
+    var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
+    var durationMs by remember(video.uri) { mutableLongStateOf(video.durationMs) }
+    var audioTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
+    var subtitleTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
+    var selectedAudioTrackId by remember(video.uri) { mutableIntStateOf(-1) }
+    var selectedSubtitleTrackId by remember(video.uri) { mutableIntStateOf(-1) }
+    var trackSelectionMessage by remember(video.uri) { mutableStateOf<String?>(null) }
+    var resumePositionApplied by remember(video.uri) { mutableStateOf(savedPositionMs < 1_500L) }
+    var brightness by remember(video.uri) { mutableFloatStateOf(
+        activity?.window?.attributes?.screenBrightness?.takeIf { it in 0.05f..1f } ?: 0.8f
+    ) }
+    var speed by remember(video.uri) { mutableFloatStateOf(1f) }
+    var volume by remember(controller, video.uri) { mutableIntStateOf(runCatching { controller.player.volume }.getOrDefault(100).coerceIn(0, 200)) }
+    var verticalGestureZone by remember { mutableIntStateOf(0) }
+
+    val persistProgress = remember(video.uri, controller, playerPreferences) {
+        {
+            val current = runCatching { controller.player.time }.getOrDefault(positionMs).coerceAtLeast(0L)
+            val length = runCatching { controller.player.length }.getOrDefault(durationMs)
+            val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
+            playerPreferences.edit().putLong(progressKey, storedPosition).apply()
+        }
+    }
 
     val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            controller.addExternalSubtitle(uri)
+            val added = controller.addExternalSubtitle(uri)
+            trackSelectionMessage = if (added) "External subtitle added" else "VLC couldn't add this subtitle file."
             panel = PlayerPanel.Subtitles
         }
     }
@@ -174,6 +197,7 @@ fun VideoPlayerScreen(
 
     LaunchedEffect(video.uri, controller, attachedController) {
         if (attachedController !== controller) return@LaunchedEffect
+        resumePositionApplied = savedPositionMs < 1_500L
         val immediateError = controller.play(video.uri)
         if (immediateError != null) {
             if (video.uri.scheme == "content" && cacheRetryAttempted.compareAndSet(false, true)) {
@@ -183,12 +207,28 @@ fun VideoPlayerScreen(
                 playbackError = immediateError
             }
         }
+        var lastSavedAt = SystemClock.elapsedRealtime()
         while (isActive) {
-            positionMs = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
+            val currentTime = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
             val mediaLength = runCatching { controller.player.length }.getOrDefault(0L)
+            val playingNow = runCatching { controller.player.isPlaying }.getOrDefault(false)
+            positionMs = currentTime
             if (mediaLength > 0L) durationMs = mediaLength
-            isPlaying = runCatching { controller.player.isPlaying }.getOrDefault(false)
-            delay(400L)
+            isPlaying = playingNow
+            if (!resumePositionApplied && playingNow && mediaLength > 0L) {
+                if (savedPositionMs >= 1_500L && savedPositionMs < mediaLength - 2_500L) {
+                    controller.seekTo(savedPositionMs)
+                    positionMs = savedPositionMs
+                }
+                resumePositionApplied = true
+            }
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastSavedAt >= 1_000L) {
+                val storedPosition = if (mediaLength > 0L && currentTime >= mediaLength - 2_500L) 0L else currentTime
+                playerPreferences.edit().putLong(progressKey, storedPosition).apply()
+                lastSavedAt = now
+            }
+            delay(350L)
         }
     }
 
@@ -199,8 +239,17 @@ fun VideoPlayerScreen(
             when (event.type) {
                 MediaPlayer.Event.Opening ->
                     Log.d("LiquidPlayer", "libVLC opening ${video.uri}")
-                MediaPlayer.Event.Playing ->
-                    mainHandler.post { playbackError = null }
+                MediaPlayer.Event.Playing -> mainHandler.post {
+                    playbackError = null
+                    val mediaLength = runCatching { controller.player.length }.getOrDefault(0L)
+                    if (!resumePositionApplied && mediaLength > 0L) {
+                        if (savedPositionMs >= 1_500L && savedPositionMs < mediaLength - 2_500L) {
+                            controller.seekTo(savedPositionMs)
+                            positionMs = savedPositionMs
+                        }
+                        resumePositionApplied = true
+                    }
+                }
                 MediaPlayer.Event.EncounteredError -> {
                     val shouldRetry = video.uri.scheme == "content" &&
                         cacheRetryAttempted.compareAndSet(false, true)
@@ -220,30 +269,41 @@ fun VideoPlayerScreen(
             }
         }
         controller.player.setEventListener(listener)
-        onDispose { controller.player.setEventListener(null) }
+        onDispose {
+            persistProgress()
+            controller.player.setEventListener(null)
+        }
     }
 
-    LaunchedEffect(panel, controller) {
+    LaunchedEffect(panel, controller, video.uri) {
         if (panel == PlayerPanel.Audio || panel == PlayerPanel.Subtitles) {
-            delay(600L)
-            audioTracks = controller.audioTracks()
-            subtitleTracks = controller.subtitleTracks()
+            // libVLC populates track descriptions asynchronously after opening. Keep the
+            // chooser synchronized while open rather than taking a single early snapshot.
+            while (isActive && (panel == PlayerPanel.Audio || panel == PlayerPanel.Subtitles)) {
+                audioTracks = controller.audioTracks()
+                subtitleTracks = controller.subtitleTracks()
+                selectedAudioTrackId = controller.currentAudioTrackId()
+                selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+                delay(300L)
+            }
         }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val frame = backdropFrame
+        val frameRevision = backdropFrameVersion
         if (frame != null) {
-            key(backdropFrameVersion) {
-                Image(
-                    bitmap = frame.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.FillBounds,
-                    // This captured frame is a backdrop source behind the native VLC view.
-                    // VLC itself is later in the Box and remains fully visible and unlayered.
-                    modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)
-                )
-            }
+            Image(
+                bitmap = frame.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                // Keep one stable drawing node. The revision invalidates its graphics layer
+                // as the double-buffered frame changes, without remounting the glass source.
+                modifier = Modifier.fillMaxSize().layerBackdrop(backdrop).graphicsLayer {
+                    alpha = 1f
+                    rotationZ = frameRevision * 0f
+                }
+            )
         }
 
         // VLC must render directly to its native TextureView. Wrapping it in layerBackdrop
@@ -279,23 +339,33 @@ fun VideoPlayerScreen(
         // Capture a small preview for backdrop sampling. layerBackdrop precedes output
         // opacity so the recorded pixels remain full-strength while the duplicate is subtle.
         LaunchedEffect(videoTextureView) {
-            var reusableBitmap: Bitmap? = null
+            var firstBuffer: Bitmap? = null
+            var secondBuffer: Bitmap? = null
+            var useFirstBuffer = true
             while (isActive) {
                 val texture = videoTextureView
                 if (texture != null && texture.isAvailable && texture.width > 0 && texture.height > 0) {
                     val scale = minOf(1f, 640f / maxOf(texture.width, texture.height).toFloat())
                     val width = (texture.width * scale).toInt().coerceAtLeast(1)
                     val height = (texture.height * scale).toInt().coerceAtLeast(1)
-                    if (reusableBitmap == null || reusableBitmap.width != width || reusableBitmap.height != height) {
-                        reusableBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    if (firstBuffer == null || firstBuffer!!.width != width || firstBuffer!!.height != height) {
+                        firstBuffer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                     }
-                    val copied = runCatching { texture.getBitmap(reusableBitmap) }.getOrNull()
+                    if (secondBuffer == null || secondBuffer!!.width != width || secondBuffer!!.height != height) {
+                        secondBuffer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    }
+                    val target = if (useFirstBuffer) firstBuffer!! else secondBuffer!!
+                    val copied = runCatching { texture.getBitmap(target) }.getOrNull()
                     if (copied != null) {
                         backdropFrame = copied
                         backdropFrameVersion++
+                        useFirstBuffer = !useFirstBuffer
                     }
                 }
-                delay(200L)
+                // Keep the same spatial sample quality while reducing backdrop staleness from
+                // five frames/second to twenty, using two buffers to avoid mutating the image
+                // currently displayed by Compose.
+                delay(50L)
             }
         }
 
@@ -315,31 +385,66 @@ fun VideoPlayerScreen(
 
         // Tap the unobstructed video area to reveal/hide controls.
         Box(
-            Modifier.fillMaxSize().pointerInput(gesturesEnabled) {
-                detectTapGestures(
-                    onTap = {
-                        controlsVisible = !controlsVisible
-                        if (!controlsVisible) panel = PlayerPanel.None
-                    },
-                    onDoubleTap = if (gesturesEnabled) { offset ->
-                        controller.seekBy(if (offset.x < size.width / 2f) -10_000L else 10_000L)
-                        controlsVisible = true
-                        panel = PlayerPanel.None
-                    } else null
-                )
-            }
+            Modifier.fillMaxSize()
+                .pointerInput(gesturesEnabled, video.uri) {
+                    detectTapGestures(
+                        onTap = {
+                            controlsVisible = !controlsVisible
+                            if (!controlsVisible) panel = PlayerPanel.None
+                        },
+                        onDoubleTap = if (gesturesEnabled) { offset ->
+                            when {
+                                offset.x < size.width * 0.30f -> controller.seekBy(-10_000L)
+                                offset.x > size.width * 0.70f -> controller.seekBy(10_000L)
+                                else -> controller.togglePlayPause()
+                            }
+                            controlsVisible = true
+                            panel = PlayerPanel.None
+                        } else null
+                    )
+                }
+                .pointerInput(gesturesEnabled, video.uri) {
+                    if (gesturesEnabled) {
+                        detectVerticalDragGestures(
+                            onDragStart = { start ->
+                                verticalGestureZone = when {
+                                    start.x < size.width * 0.40f -> -1 // left side: brightness
+                                    start.x > size.width * 0.60f -> 1 // right side: volume
+                                    else -> 0
+                                }
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                when (verticalGestureZone) {
+                                    -1 -> {
+                                        brightness = (brightness - dragAmount / size.height * 1.4f).coerceIn(0.05f, 1f)
+                                        activity?.window?.let { window ->
+                                            val params = window.attributes
+                                            params.screenBrightness = brightness
+                                            window.attributes = params
+                                        }
+                                    }
+                                    1 -> {
+                                        volume = (volume - (dragAmount / size.height * 220f).roundToInt()).coerceIn(0, 200)
+                                        runCatching { controller.player.volume = volume }
+                                    }
+                                }
+                                change.consume()
+                            }
+                        )
+                    }
+                }
         )
 
         if (controlsVisible) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassIconButton(backdrop, Icons.Default.ArrowBack, "Back", onClick = onClose)
+                    GlassIconButton(backdrop, Icons.Default.ArrowBack, "Back", onClick = { persistProgress(); onClose() })
                     Column(Modifier.weight(1f)) {
                         Text(video.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                         Text("libVLC · Local playback", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
                     }
-                    GlassIconButton(backdrop, Icons.Default.Audiotrack, "Audio tracks", onClick = { panel = togglePanel(panel, PlayerPanel.Audio) })
-                    GlassIconButton(backdrop, Icons.Default.ClosedCaption, "Subtitles", onClick = { panel = togglePanel(panel, PlayerPanel.Subtitles) })
+                    GlassIconButton(backdrop, Icons.Default.Audiotrack, "Audio tracks", onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Audio) })
+                    GlassIconButton(backdrop, Icons.Default.ClosedCaption, "Subtitles", onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Subtitles) })
                     GlassIconButton(backdrop, Icons.Default.Tune, "Player tools", onClick = { panel = togglePanel(panel, PlayerPanel.Tools) })
                 }
 
@@ -369,15 +474,30 @@ fun VideoPlayerScreen(
                 Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     GlassIconButton(backdrop, Icons.Default.Lock, "Lock controls", onClick = { controlsVisible = false })
                     Spacer(Modifier.weight(1f))
-                    GlassIconButton(backdrop, Icons.Default.SkipPrevious, "Back 10 seconds", onClick = { controller.seekBy(-10_000L) })
+                    val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
+                    GlassIconButton(
+                        backdrop, Icons.Default.SkipPrevious, "Previous video",
+                        onClick = {
+                            if (currentVideoIndex > 0) {
+                                persistProgress()
+                                onSelectVideo(playlist[currentVideoIndex - 1])
+                            }
+                        }
+                    )
                     Spacer(Modifier.width(12.dp))
                     GlassIconButton(backdrop, if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (isPlaying) "Pause" else "Play", modifier = Modifier.size(60.dp), selected = true, onClick = { controller.togglePlayPause() })
                     Spacer(Modifier.width(12.dp))
-                    GlassIconButton(backdrop, Icons.Default.SkipNext, "Forward 10 seconds", onClick = { controller.seekBy(10_000L) })
+                    GlassIconButton(
+                        backdrop, Icons.Default.SkipNext, "Next video",
+                        onClick = {
+                            if (currentVideoIndex >= 0 && currentVideoIndex < playlist.lastIndex) {
+                                persistProgress()
+                                onSelectVideo(playlist[currentVideoIndex + 1])
+                            }
+                        }
+                    )
                     Spacer(Modifier.weight(1f))
                     GlassIconButton(backdrop, Icons.Default.AspectRatio, "Aspect ratio", onClick = { panel = togglePanel(panel, PlayerPanel.AspectRatio) })
-                    Spacer(Modifier.width(8.dp))
-                    GlassIconButton(backdrop, Icons.Default.Fullscreen, "Display settings", onClick = { panel = togglePanel(panel, PlayerPanel.Display) })
                 }
             }
         }
@@ -407,7 +527,6 @@ fun VideoPlayerScreen(
                                     PlayerPanel.Subtitles -> "Subtitles"
                                     PlayerPanel.Tools -> "Player tools"
                                     PlayerPanel.AspectRatio -> "Aspect ratio"
-                                    PlayerPanel.Display -> "Video display"
                                     PlayerPanel.Speed -> "Playback speed"
                                     PlayerPanel.None -> ""
                                 },
@@ -419,14 +538,23 @@ fun VideoPlayerScreen(
                         }
 
                         when (panel) {
-                            PlayerPanel.Audio -> TrackPanel(
-                                emptyLabel = "Audio tracks appear after the video stream is ready.",
-                                tracks = audioTracks,
-                                onSelect = { controller.selectAudioTrack(it); panel = PlayerPanel.None }
-                            )
+                            PlayerPanel.Audio -> {
+                                trackSelectionMessage?.let { Text(it, color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
+                                TrackPanel(
+                                    emptyLabel = "Waiting for audio tracks…",
+                                    tracks = audioTracks,
+                                    selectedTrackId = selectedAudioTrackId,
+                                    onSelect = { id ->
+                                        val success = controller.selectAudioTrack(id)
+                                        selectedAudioTrackId = controller.currentAudioTrackId()
+                                        trackSelectionMessage = if (success) "Audio track selected" else "VLC could not select this audio track."
+                                    }
+                                )
+                            }
                             PlayerPanel.Subtitles -> {
+                                trackSelectionMessage?.let { Text(it, color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
                                 Button(
-                                    onClick = { subtitlePicker.launch(arrayOf("text/*", "application/octet-stream")) },
+                                    onClick = { subtitlePicker.launch(arrayOf("*/*")) },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 ) {
@@ -435,15 +563,23 @@ fun VideoPlayerScreen(
                                     Text("Open subtitle file")
                                 }
                                 TrackPanel(
-                                    emptyLabel = "No embedded subtitles detected.",
+                                    emptyLabel = "Waiting for subtitle tracks…",
                                     tracks = subtitleTracks,
-                                    onSelect = { controller.selectSubtitleTrack(it); panel = PlayerPanel.None },
-                                    onDisable = { controller.selectSubtitleTrack(-1); panel = PlayerPanel.None }
+                                    selectedTrackId = selectedSubtitleTrackId,
+                                    onSelect = { id ->
+                                        val success = controller.selectSubtitleTrack(id)
+                                        selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+                                        trackSelectionMessage = if (success) "Subtitle track selected" else "VLC could not select this subtitle track."
+                                    },
+                                    onDisable = {
+                                        val success = controller.selectSubtitleTrack(-1)
+                                        selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+                                        trackSelectionMessage = if (success) "Subtitles disabled" else "VLC could not disable subtitles."
+                                    }
                                 )
                             }
                             PlayerPanel.Tools -> ToolsPanel(
                                 onAspectRatio = { panel = PlayerPanel.AspectRatio },
-                                onDisplay = { panel = PlayerPanel.Display },
                                 onAudio = { panel = PlayerPanel.Audio },
                                 onSubtitles = { panel = PlayerPanel.Subtitles },
                                 onSpeed = { panel = PlayerPanel.Speed }
@@ -451,34 +587,6 @@ fun VideoPlayerScreen(
                             PlayerPanel.AspectRatio -> AspectRatioPanel { label, ratio ->
                                 controller.setAspectRatio(ratio)
                                 panel = PlayerPanel.None
-                            }
-                            PlayerPanel.Display -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("Brightness", color = Color.LightGray)
-                                Slider(
-                                    value = brightness,
-                                    onValueChange = {
-                                        brightness = it
-                                        activity?.window?.let { window ->
-                                            val params = window.attributes
-                                            params.screenBrightness = it.coerceIn(0.05f, 1f)
-                                            window.attributes = params
-                                        }
-                                    },
-                                    colors = neutralSliderColors()
-                                )
-                                Text("Volume", color = Color.LightGray)
-                                Slider(
-                                    value = volume.toFloat(),
-                                    onValueChange = {
-                                        volume = it.toInt().coerceIn(0, 200)
-                                        runCatching { controller.player.volume = volume }
-                                    },
-                                    valueRange = 0f..200f,
-                                    colors = neutralSliderColors()
-                                )
-                                Text("$volume%", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
-                                Spacer(Modifier.height(8.dp))
-                                Text("Screen brightness is local to the player and resets when you leave playback.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                             }
                             PlayerPanel.Speed -> {
                                 listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { rate ->
@@ -508,6 +616,7 @@ fun VideoPlayerScreen(
 private fun TrackPanel(
     emptyLabel: String,
     tracks: List<TrackOption>,
+    selectedTrackId: Int,
     onSelect: (Int) -> Unit,
     onDisable: (() -> Unit)? = null
 ) {
@@ -520,9 +629,10 @@ private fun TrackPanel(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onSelect(track.id) }.padding(vertical = 12.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(18.dp).clip(RoundedCornerShape(50)).background(if (index == 0) Color.White else Color.White.copy(alpha = 0.25f)))
+                    Box(Modifier.size(18.dp).clip(RoundedCornerShape(50)).background(if (track.id == selectedTrackId) Color.White else Color.White.copy(alpha = 0.25f)))
                     Spacer(Modifier.width(12.dp))
                     Text(track.label, color = Color.White, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (track.id == selectedTrackId) Icon(Icons.Default.Check, contentDescription = "Selected track", tint = Color.White, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -535,7 +645,6 @@ private fun TrackPanel(
 @Composable
 private fun ToolsPanel(
     onAspectRatio: () -> Unit,
-    onDisplay: () -> Unit,
     onAudio: () -> Unit,
     onSubtitles: () -> Unit,
     onSpeed: () -> Unit
@@ -543,7 +652,6 @@ private fun ToolsPanel(
     val tools = listOf(
         Triple(Icons.Default.PlaylistAdd, "Playing queue", onSpeed),
         Triple(Icons.Default.AspectRatio, "Aspect ratio", onAspectRatio),
-        Triple(Icons.Default.Tune, "Display settings", onDisplay),
         Triple(Icons.Default.Bookmark, "Bookmark", {}),
         Triple(Icons.Default.Audiotrack, "Audio tracks", onAudio),
         Triple(Icons.Default.ClosedCaption, "Subtitles", onSubtitles),

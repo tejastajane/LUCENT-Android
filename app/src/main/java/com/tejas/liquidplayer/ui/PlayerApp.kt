@@ -160,10 +160,18 @@ fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
         label = "library-player-transition"
     ) { activeVideo ->
         if (activeVideo != null) {
+            val playbackQueue = remember(videos, activeVideo) {
+                if (videos.any { it.uri == activeVideo.uri }) videos
+                else listOf(activeVideo) + videos.filterNot { it.uri == activeVideo.uri }
+            }
             LiquidPlayerTheme(darkTheme = true) {
                 VideoPlayerScreen(
-                    video = activeVideo, onClose = { selectedVideo = null },
-                    hardwareAcceleration = hardwareAcceleration, gesturesEnabled = gesturesEnabled
+                    video = activeVideo,
+                    playlist = playbackQueue,
+                    onSelectVideo = ::openVideo,
+                    onClose = { selectedVideo = null },
+                    hardwareAcceleration = hardwareAcceleration,
+                    gesturesEnabled = gesturesEnabled
                 )
             }
         } else {

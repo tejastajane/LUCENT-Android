@@ -170,18 +170,18 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         player.spuTracks?.map { TrackOption(it.id, it.name ?: "Subtitle track") }.orEmpty()
     }.getOrDefault(emptyList())
 
-    fun selectAudioTrack(id: Int) {
-        if (!released) player.setAudioTrack(id)
-    }
+    fun currentAudioTrackId(): Int = runCatching { player.audioTrack }.getOrDefault(-1)
 
-    fun selectSubtitleTrack(id: Int) {
-        if (!released) player.setSpuTrack(id)
-    }
+    fun currentSubtitleTrackId(): Int = runCatching { player.spuTrack }.getOrDefault(-1)
 
-    fun addExternalSubtitle(uri: Uri) {
-        if (released) return
-        runCatching { player.addSlave(0, uri, true) }
-    }
+    fun selectAudioTrack(id: Int): Boolean =
+        !released && runCatching { player.setAudioTrack(id) }.getOrDefault(false)
+
+    fun selectSubtitleTrack(id: Int): Boolean =
+        !released && runCatching { player.setSpuTrack(id) }.getOrDefault(false)
+
+    fun addExternalSubtitle(uri: Uri): Boolean =
+        !released && runCatching { player.addSlave(0, uri, true) }.getOrDefault(false)
 
     fun close() {
         if (released) return

@@ -99,12 +99,11 @@ fun GlassIconButton(
     selected: Boolean = false,
     onClick: () -> Unit
 ) {
-    val alpha = if (selected) 0.095f else 0.035f
     GlassSurface(
         backdrop = backdrop,
-        modifier = modifier.size(48.dp).clickable(onClick = onClick),
+        modifier = modifier.size(48.dp).clip(RoundedCornerShape(50.dp)).clickable(onClick = onClick),
         cornerRadius = 50.dp,
-        surfaceAlpha = alpha
+        surfaceAlpha = 0.075f
     ) {
         Icon(
             imageVector = icon,

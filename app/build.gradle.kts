@@ -23,7 +23,7 @@ android {
         }
         create("ci") {
             dimension = "environment"
-            applicationIdSuffix = ".ci"
+            applicationIdSuffix = ".ci${System.getenv("GITHUB_RUN_ID") ?: "local"}"
         }
     }
 
