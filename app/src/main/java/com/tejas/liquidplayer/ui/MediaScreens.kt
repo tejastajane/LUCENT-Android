@@ -7,10 +7,13 @@ import android.os.StatFs
 import android.text.format.Formatter
 import android.util.Size
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -33,7 +36,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -74,6 +79,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,6 +121,7 @@ fun MainLibraryUi(
     onBrowseBack: () -> Unit,
     onBrowseEntry: (BrowseEntry) -> Unit,
     onPlay: (VideoItem) -> Unit,
+    recentVideo: VideoItem?,
     onChooseVideoFile: () -> Unit,
     hardwareAcceleration: Boolean,
     onHardwareAccelerationChanged: (Boolean) -> Unit,
@@ -125,6 +132,32 @@ fun MainLibraryUi(
     onRescan: () -> Unit
 ) {
     val backdrop = rememberLayerBackdrop()
+    val videosListState = rememberLazyListState()
+    var showRecentPlay by remember { mutableStateOf(true) }
+
+    LaunchedEffect(selectedTab, videosListState) {
+        var previousIndex = videosListState.firstVisibleItemIndex
+        var previousOffset = videosListState.firstVisibleItemScrollOffset
+        if (selectedTab == 0) showRecentPlay = true
+        snapshotFlow {
+            videosListState.firstVisibleItemIndex to videosListState.firstVisibleItemScrollOffset
+        }.collect { current ->
+            if (selectedTab == 0) {
+                val movingDown = current.first > previousIndex ||
+                    (current.first == previousIndex && current.second > previousOffset + 2)
+                val movingUp = current.first < previousIndex ||
+                    (current.first == previousIndex && current.second < previousOffset - 2)
+                when {
+                    current.first == 0 && current.second <= 2 -> showRecentPlay = true
+                    movingDown -> showRecentPlay = false
+                    movingUp -> showRecentPlay = true
+                }
+            }
+            previousIndex = current.first
+            previousOffset = current.second
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Record the real library UI, not an empty black placeholder. The bottom tabs are
         // overlaid on this full-height source so the content continues beneath the glass.
@@ -149,7 +182,7 @@ fun MainLibraryUi(
                     0 -> VideosScreen(
                         backdrop, videos, hasVideoPermission, onRequestMediaPermission,
                         selectedFolder, onClearFolder = { onFolderSelected("") }, onPlay = onPlay,
-                        onChooseVideoFile = onChooseVideoFile
+                        onChooseVideoFile = onChooseVideoFile, listState = videosListState
                     )
                     1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected)
                     2 -> BrowseScreen(
@@ -178,6 +211,46 @@ fun MainLibraryUi(
                 }
             }
         }
+        // The recent-play capsule is composed UNDER the nav bar in z-order. As it hides,
+        // it slides down behind the liquid tabs, like the reference's compact capture pill.
+        AnimatedVisibility(
+            visible = selectedTab == 0 && recentVideo != null && showRecentPlay,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 78.dp),
+            enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { it * 2 },
+            exit = fadeOut(tween(130)) + slideOutVertically(tween(180)) { it * 3 }
+        ) {
+            val item = recentVideo
+            if (item != null) {
+                GlassSurface(
+                    backdrop = backdrop,
+                    modifier = Modifier.clip(RoundedCornerShape(50.dp)).clickable { onPlay(item) },
+                    cornerRadius = 50.dp,
+                    surfaceAlpha = 0.075f
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play recent video",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(21.dp)
+                        )
+                        Text(
+                            text = "Play recent",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+            }
+        }
+
         BottomNavigation(
             backdrop,
             selectedTab,
@@ -196,7 +269,8 @@ private fun VideosScreen(
     selectedFolder: String?,
     onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
-    onChooseVideoFile: () -> Unit
+    onChooseVideoFile: () -> Unit,
+    listState: LazyListState
 ) {
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -281,6 +355,7 @@ private fun VideosScreen(
             )
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)

@@ -16,6 +16,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "environment"
+    productFlavors {
+        create("production") {
+            dimension = "environment"
+        }
+        create("ci") {
+            dimension = "environment"
+            applicationIdSuffix = ".ci"
+        }
+    }
+
     buildFeatures {
         compose = true
     }

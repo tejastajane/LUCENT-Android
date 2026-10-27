@@ -78,6 +78,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,6 +102,8 @@ import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.GlassSurface
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
@@ -117,6 +120,8 @@ fun VideoPlayerScreen(
     val activity = context.findActivity()
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val backdrop = rememberLayerBackdrop()
+    val retryScope = rememberCoroutineScope()
+    val cacheRetryAttempted = remember(controller, video.uri) { AtomicBoolean(false) }
 
     // Keep VLC's native TextureView outside Compose graphics/backdrop layers. A separate
     // low-opacity frame copy supplies a sample for glass controls without layering VLC output.
@@ -169,7 +174,15 @@ fun VideoPlayerScreen(
 
     LaunchedEffect(video.uri, controller, attachedController) {
         if (attachedController !== controller) return@LaunchedEffect
-        controller.play(video.uri)?.let { playbackError = it }
+        val immediateError = controller.play(video.uri)
+        if (immediateError != null) {
+            if (video.uri.scheme == "content" && cacheRetryAttempted.compareAndSet(false, true)) {
+                playbackError = "Retrying video through a local cache…"
+                controller.retryUsingCachedCopy(video.uri)?.let { playbackError = it }
+            } else {
+                playbackError = immediateError
+            }
+        }
         while (isActive) {
             positionMs = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
             val mediaLength = runCatching { controller.player.length }.getOrDefault(0L)
@@ -188,9 +201,20 @@ fun VideoPlayerScreen(
                     Log.d("LiquidPlayer", "libVLC opening ${video.uri}")
                 MediaPlayer.Event.Playing ->
                     mainHandler.post { playbackError = null }
-                MediaPlayer.Event.EncounteredError -> mainHandler.post {
-                    playbackError = "libVLC couldn't read or decode this file. Try another local video; details are in the LiquidPlayer/VLC log."
-                    Log.e("LiquidPlayer/VLC", "libVLC playback error for ${video.uri}")
+                MediaPlayer.Event.EncounteredError -> {
+                    val shouldRetry = video.uri.scheme == "content" &&
+                        cacheRetryAttempted.compareAndSet(false, true)
+                    mainHandler.post {
+                        if (shouldRetry) {
+                            playbackError = "Retrying video through a local cache…"
+                            retryScope.launch {
+                                controller.retryUsingCachedCopy(video.uri)?.let { playbackError = it }
+                            }
+                        } else {
+                            playbackError = "libVLC failed to open this video even after the local-cache retry. Try another file; diagnostic details are logged."
+                            Log.e("LiquidPlayer/VLC", "Playback failed for ${video.uri}")
+                        }
+                    }
                 }
                 else -> Unit
             }

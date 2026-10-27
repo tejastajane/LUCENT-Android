@@ -37,20 +37,20 @@ jobs:
         with:
           gradle-version: "9.7.1"
 
-      - name: Build Android debug APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Build production APK and isolated CI test APK
+        run: gradle --no-daemon --stacktrace :app:assembleProductionDebug :app:assembleCiDebug
 
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: liquid-player-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/production/debug/app-production-debug.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Build instrumentation test APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebugAndroidTest
+        run: gradle --no-daemon --stacktrace :app:assembleCiDebugAndroidTest
 
       - name: Generate short local video fixture
         run: |
@@ -73,14 +73,14 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            # The hosted emulator image may contain an older build signed with a different key.
-            # Remove it before installing the APK built by this workflow.
-            adb uninstall com.tejas.liquidplayer || true
-            adb install app/build/outputs/apk/debug/app-debug.apk
+            # CI has a unique application id, isolated from stale debug installs on the runner.
+            adb uninstall com.tejas.liquidplayer.ci || true
+            adb uninstall com.tejas.liquidplayer.ci.test || true
+            adb install app/build/outputs/apk/ci/debug/app-ci-debug.apk
             adb push liquidplayer-smoke.mp4 /data/local/tmp/liquidplayer-smoke.mp4
-            adb shell run-as com.tejas.liquidplayer mkdir -p cache
-            adb shell run-as com.tejas.liquidplayer cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
-            gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
+            adb shell run-as com.tejas.liquidplayer.ci mkdir -p cache
+            adb shell run-as com.tejas.liquidplayer.ci cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest
 
       - name: Upload Android test results
         if: always()

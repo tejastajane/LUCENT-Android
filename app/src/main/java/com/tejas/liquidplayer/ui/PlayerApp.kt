@@ -43,6 +43,22 @@ fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var lastPlayedVideo by remember(preferences) {
+        mutableStateOf(
+            preferences.getString("last_played_uri", null)?.let { savedUri ->
+                VideoItem(
+                    id = savedUri.hashCode().toLong(),
+                    uri = Uri.parse(savedUri),
+                    name = preferences.getString("last_played_name", "Last played video") ?: "Last played video",
+                    relativePath = preferences.getString("last_played_path", "Recent/") ?: "Recent/",
+                    durationMs = preferences.getLong("last_played_duration", 0L),
+                    sizeBytes = preferences.getLong("last_played_size", 0L),
+                    dateAddedSeconds = preferences.getLong("last_played_date", 0L),
+                    mimeType = preferences.getString("last_played_mime", null)
+                )
+            }
+        )
+    }
     var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
     var storageTreeUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var browsePath by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -52,6 +68,20 @@ fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
     }
     var gesturesEnabled by remember {
         mutableStateOf(preferences.getBoolean("gestures_enabled", true))
+    }
+
+    fun openVideo(item: VideoItem) {
+        lastPlayedVideo = item
+        selectedVideo = item
+        preferences.edit()
+            .putString("last_played_uri", item.uri.toString())
+            .putString("last_played_name", item.name)
+            .putString("last_played_path", item.relativePath)
+            .putLong("last_played_duration", item.durationMs)
+            .putLong("last_played_size", item.sizeBytes)
+            .putLong("last_played_date", item.dateAddedSeconds)
+            .putString("last_played_mime", item.mimeType)
+            .apply()
     }
 
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
@@ -86,15 +116,17 @@ fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
                 )
             }
             val name = queryDisplayName(context, uri) ?: "Selected video"
-            selectedVideo = VideoItem(
-                id = uri.toString().hashCode().toLong(),
-                uri = uri,
-                name = name,
-                relativePath = "Selected files/",
-                durationMs = 0L,
-                sizeBytes = 0L,
-                dateAddedSeconds = System.currentTimeMillis() / 1000L,
-                mimeType = context.contentResolver.getType(uri)
+            openVideo(
+                VideoItem(
+                    id = uri.toString().hashCode().toLong(),
+                    uri = uri,
+                    name = name,
+                    relativePath = "Selected files/",
+                    durationMs = 0L,
+                    sizeBytes = 0L,
+                    dateAddedSeconds = System.currentTimeMillis() / 1000L,
+                    mimeType = context.contentResolver.getType(uri)
+                )
             )
         }
     }
@@ -156,14 +188,17 @@ fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
                     else {
                         val isVideo = entry.mimeType?.startsWith("video/") == true ||
                             entry.name.substringAfterLast('.', "").lowercase() in setOf("mkv", "mp4", "mov", "avi", "webm", "m4v", "3gp", "ts", "wmv", "flv", "mpg", "mpeg")
-                        if (isVideo) selectedVideo = VideoItem(
-                            id = entry.uri.toString().hashCode().toLong(), uri = entry.uri, name = entry.name,
-                            relativePath = "Storage browser/", durationMs = 0L, sizeBytes = entry.sizeBytes,
-                            dateAddedSeconds = System.currentTimeMillis() / 1000L, mimeType = entry.mimeType
+                        if (isVideo) openVideo(
+                            VideoItem(
+                                id = entry.uri.toString().hashCode().toLong(), uri = entry.uri, name = entry.name,
+                                relativePath = "Storage browser/", durationMs = 0L, sizeBytes = entry.sizeBytes,
+                                dateAddedSeconds = System.currentTimeMillis() / 1000L, mimeType = entry.mimeType
+                            )
                         )
                     }
                 },
-                onPlay = { selectedVideo = it },
+                onPlay = ::openVideo,
+                recentVideo = lastPlayedVideo ?: videos.maxByOrNull { it.dateAddedSeconds },
                 onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
                 hardwareAcceleration = hardwareAcceleration,
                 onHardwareAccelerationChanged = { hardwareAcceleration = it; preferences.edit().putBoolean("hardware_acceleration", it).apply() },
