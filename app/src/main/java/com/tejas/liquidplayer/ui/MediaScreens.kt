@@ -129,7 +129,7 @@ fun MainLibraryUi(
         // Record the real library UI, not an empty black placeholder. The bottom tabs are
         // overlaid on this full-height source so the content continues beneath the glass.
         Box(
-            Modifier.fillMaxSize().layerBackdrop(backdrop).background(Color.Black)
+            Modifier.fillMaxSize().layerBackdrop(backdrop).background(MaterialTheme.colorScheme.background)
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 AnimatedContent(
@@ -547,7 +547,7 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
                             checked = item.checked,
                             onCheckedChange = item.onCheckedChange,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.Black,
+                                checkedThumbColor = MaterialTheme.colorScheme.background,
                                 checkedTrackColor = MaterialTheme.colorScheme.onBackground,
                                 uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 uncheckedTrackColor = Color.DarkGray
