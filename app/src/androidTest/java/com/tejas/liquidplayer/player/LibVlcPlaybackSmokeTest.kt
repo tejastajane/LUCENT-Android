@@ -72,11 +72,18 @@ class LibVlcPlaybackSmokeTest {
                         }
                     }
                 })
-                val immediateError = instance.play(contentUri)
-                if (immediateError != null) {
-                    playbackResult.set(-1)
-                    playbackEvent.countDown()
-                    throw AssertionError(immediateError)
+                // play() now opens MediaStore descriptors on Dispatchers.IO before
+                // queuing native playback on main, so invoke it from a coroutine in this test.
+                CoroutineScope(Dispatchers.IO).launch {
+                    val immediateError = try {
+                        instance.play(contentUri)
+                    } catch (error: Exception) {
+                        error.message ?: "Unexpected exception starting libVLC playback"
+                    }
+                    if (immediateError != null) {
+                        playbackResult.set(-1)
+                        playbackEvent.countDown()
+                    }
                 }
             }
 
