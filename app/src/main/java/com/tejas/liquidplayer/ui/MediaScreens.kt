@@ -158,11 +158,9 @@ fun MainLibraryUi(
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 AnimatedContent(
                     targetState = if (searchQuery.isNotBlank()) 3 else selectedTab.coerceIn(0, 2),
+                    // Keep the glass navigation stationary while only page content crossfades.
                     transitionSpec = {
-                        if (targetState > initialState) (slideInHorizontally(tween(250)) { it / 3 } + fadeIn(tween(160))) togetherWith
-                            (slideOutHorizontally(tween(220)) { -it / 4 } + fadeOut(tween(120)))
-                        else (slideInHorizontally(tween(250)) { -it / 3 } + fadeIn(tween(160))) togetherWith
-                            (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(120)))
+                        fadeIn(tween(180)) togetherWith fadeOut(tween(140))
                     },
                     label = "videos-folders-settings-transition"
                 ) { tab ->
@@ -616,11 +614,11 @@ private fun BottomNavigation(
         val groupWidth = maxWidth * 0.69f + 84.dp
         val transition = updateTransition(targetState = searchExpanded, label = "navbar-search-morph")
         val tabsWidth by transition.animateDp(
-            transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
+            transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 320f) },
             label = "tabs-width"
         ) { expanded -> if (expanded) 0.dp else maxWidth * 0.69f }
         val activeWidth by transition.animateDp(
-            transitionSpec = { spring(dampingRatio = 0.82f, stiffness = 500f) },
+            transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 360f) },
             label = "active-tab-width"
         ) { expanded -> if (expanded) 62.dp else 0.dp }
         val searchWidth by transition.animateDp(
@@ -628,7 +626,7 @@ private fun BottomNavigation(
             label = "search-width"
         ) { expanded -> if (expanded) maxWidth * 0.69f + 10.dp else 72.dp }
         val searchHeight by transition.animateDp(
-            transitionSpec = { spring(dampingRatio = 0.86f, stiffness = 500f) },
+            transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 360f) },
             label = "search-height"
         ) { expanded -> if (expanded) 62.dp else 72.dp }
         val tabsAlpha by transition.animateFloat(
