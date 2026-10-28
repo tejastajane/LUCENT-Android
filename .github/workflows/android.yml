@@ -74,8 +74,8 @@ jobs:
           disable-animations: true
           script: |
             # Use this run's unique package id so a restored emulator snapshot cannot leave a conflicting signature.
-            adb shell pm uninstall --user 0 "com.tejas.liquidplayer.ci${{ github.run_id }}" || true
-            adb shell pm uninstall --user 0 "com.tejas.liquidplayer.ci${{ github.run_id }}.test" || true
+            adb uninstall "com.tejas.liquidplayer.ci${{ github.run_id }}" || true
+            adb uninstall "com.tejas.liquidplayer.ci${{ github.run_id }}.test" || true
             adb install app/build/outputs/apk/ci/debug/app-ci-debug.apk
             adb push liquidplayer-smoke.mp4 /data/local/tmp/liquidplayer-smoke.mp4
             adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}" mkdir -p cache
