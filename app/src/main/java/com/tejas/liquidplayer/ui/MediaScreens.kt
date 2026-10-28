@@ -566,10 +566,7 @@ private fun BottomNavigation(
         if (!searchExpanded) {
             LiquidBottomTabs(selectedTabIndex = selectedTab.coerceIn(0, 2), onTabSelected = onTabSelected, backdrop = backdrop, tabsCount = 3, modifier = Modifier.fillMaxWidth(0.72f).height(64.dp)) {
                 navItems.forEachIndexed { index, (icon, label) ->
-                    LiquidBottomTab(onClick = {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        onTabSelected(index)
-                    }) {
+                    LiquidBottomTab(onClick = { onTabSelected(index) }) {
                         Icon(icon, label, tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(21.dp))
                         Text(label, color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), maxLines = 1)
                     }
