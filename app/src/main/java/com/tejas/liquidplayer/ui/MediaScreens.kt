@@ -6,7 +6,6 @@ import android.util.Size
 import android.view.HapticFeedbackConstants
 import android.os.Build
 import android.text.format.Formatter
-import android.util.Size
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
