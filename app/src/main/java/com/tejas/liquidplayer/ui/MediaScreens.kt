@@ -6,6 +6,7 @@ import android.util.Size
 import android.view.HapticFeedbackConstants
 import android.os.Build
 import android.text.format.Formatter
+import android.util.Size
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,10 +52,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.InsertDriveFile
@@ -62,7 +61,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
@@ -102,6 +100,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -133,43 +132,38 @@ fun MainLibraryUi(
     onRescan: () -> Unit
 ) {
     val backdrop = rememberLayerBackdrop()
+    var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     val showRecentPlayState = remember { mutableStateOf(true) }
-    val recentPlayScrollConnection = remember {
+    val scrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput) {
-                    when {
-                        available.y < -1f -> showRecentPlayState.value = false
-                        available.y > 1f -> showRecentPlayState.value = true
-                    }
+                    if (available.y < -1f) showRecentPlayState.value = false
+                    if (available.y > 1f) showRecentPlayState.value = true
                 }
                 return Offset.Zero
             }
         }
     }
-    var searchExpanded by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-
-    Box(Modifier.fillMaxSize().nestedScroll(recentPlayScrollConnection).background(MaterialTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().nestedScroll(scrollConnection).background(MaterialTheme.colorScheme.background)) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(MaterialTheme.colorScheme.background)) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 AnimatedContent(
                     targetState = if (searchQuery.isNotBlank()) 3 else selectedTab.coerceIn(0, 2),
                     transitionSpec = {
-                        if (targetState > initialState) {
-                            (slideInHorizontally(tween(240)) { it / 3 } + fadeIn(tween(160))) togetherWith
-                                (slideOutHorizontally(tween(220)) { -it / 4 } + fadeOut(tween(120)))
-                        } else {
-                            (slideInHorizontally(tween(240)) { -it / 3 } + fadeIn(tween(160))) togetherWith
-                                (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(120)))
-                        }
+                        if (targetState > initialState) (slideInHorizontally(tween(250)) { it / 3 } + fadeIn(tween(160))) togetherWith
+                            (slideOutHorizontally(tween(220)) { -it / 4 } + fadeOut(tween(120)))
+                        else (slideInHorizontally(tween(250)) { -it / 3 } + fadeIn(tween(160))) togetherWith
+                            (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(120)))
                     },
-                    label = "library-tab-transition"
+                    label = "videos-folders-settings-transition"
                 ) { tab ->
                     when (tab) {
-                        0 -> HomeScreen(backdrop, videos, hasVideoPermission, onRequestMediaPermission, recentVideo, hasResumeHistory, onPlay, onChooseVideoFile, { onTabSelected(1) })
-                        1 -> LibraryScreen(backdrop, videos, hasVideoPermission, onRequestMediaPermission, onPlay, onChooseVideoFile)
-                        3 -> SearchResultsScreen(backdrop, videos, searchQuery, hasVideoPermission, onRequestMediaPermission, onPlay, { searchQuery = "" })
+                        0 -> VideosScreen(backdrop, videos, hasVideoPermission, onRequestMediaPermission, selectedFolder, onClearFolder = { selectedFolder = null }, onPlay = onPlay, onChooseVideoFile = onChooseVideoFile)
+                        1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) })
+                        3 -> SearchResultsScreen(backdrop, videos, searchQuery, hasVideoPermission, onRequestMediaPermission, onPlay)
                         else -> SettingsScreen(
                             backdrop = backdrop,
                             hardwareAcceleration = hardwareAcceleration,
@@ -192,12 +186,15 @@ fun MainLibraryUi(
             exit = fadeOut(tween(130)) + slideOutVertically(tween(180)) { it * 3 }
         ) {
             val item = recentVideo
-            if (item != null) {
-                GlassSurface(backdrop, Modifier.clip(RoundedCornerShape(50.dp)).clickable { onPlay(item) }, cornerRadius = 50.dp, surfaceAlpha = 0.13f) {
-                    Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
-                        Text(if (hasResumeHistory) "Resume" else "Play", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onBackground)
-                    }
+            if (item != null) GlassSurface(
+                backdrop = backdrop,
+                modifier = Modifier.clip(RoundedCornerShape(50.dp)).clickable { onPlay(item) },
+                cornerRadius = 50.dp,
+                surfaceAlpha = 0.13f
+            ) {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
+                    Text(if (hasResumeHistory) "Resume" else "Play", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -215,103 +212,76 @@ fun MainLibraryUi(
 }
 
 @Composable
-private fun HomeScreen(
-    backdrop: LayerBackdrop,
-    videos: List<VideoItem>,
-    hasPermission: Boolean,
-    onRequestPermission: () -> Unit,
-    recentVideo: VideoItem?,
-    hasResumeHistory: Boolean,
-    onPlay: (VideoItem) -> Unit,
-    onChooseVideoFile: () -> Unit,
-    onOpenLibrary: () -> Unit
-) {
-    Column(Modifier.fillMaxSize()) {
-        Text("Home", Modifier.padding(start = 22.dp, end = 18.dp, top = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-        if (!hasPermission && videos.isEmpty()) {
-            EmptyState(backdrop, "Your video library is waiting", "Allow video access to find local videos, or open a video file directly.", "Allow video access", onRequestPermission, "Open video file", onChooseVideoFile)
-        } else {
-            if (recentVideo != null) {
-                Text(if (hasResumeHistory) "Continue watching" else "Ready to watch", Modifier.padding(start = 22.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                VideoRow(recentVideo, onClick = { onPlay(recentVideo) })
-            }
-            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Recently added", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                TextButton(onClick = onOpenLibrary) { Text("View library", color = MaterialTheme.colorScheme.onBackground) }
-            }
-            if (videos.isEmpty()) {
-                EmptyState(backdrop, "No videos yet", "Choose a local video to start watching.", "Open video file", onChooseVideoFile)
-            } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 150.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    items(videos.sortedByDescending { it.dateAddedSeconds }.take(8), key = { it.id }) { item -> VideoRow(item, onClick = { onPlay(item) }) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SearchResultsScreen(
     backdrop: LayerBackdrop,
     videos: List<VideoItem>,
-    searchQuery: String,
+    query: String,
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
-    onPlay: (VideoItem) -> Unit,
-    onClearSearch: () -> Unit
+    onPlay: (VideoItem) -> Unit
 ) {
-    val filtered = remember(videos, searchQuery) {
-        videos.filter { it.name.contains(searchQuery, ignoreCase = true) || it.relativePath.contains(searchQuery, ignoreCase = true) }
-    }
+    val filtered = remember(videos, query) { videos.filter { it.name.contains(query, ignoreCase = true) || it.relativePath.contains(query, ignoreCase = true) } }
     Column(Modifier.fillMaxSize()) {
         Text("Search results", Modifier.padding(start = 22.dp, end = 18.dp, top = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-        if (!hasPermission) {
-            EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
-        } else if (filtered.isEmpty()) {
-            EmptyState(backdrop, "No matches", "Try another title or folder name.", "Clear search", onClearSearch)
-        } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, bottom = 150.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                items(filtered, key = { it.id }) { item -> VideoRow(item, onClick = { onPlay(item) }) }
-            }
+        if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
+        else if (filtered.isEmpty()) EmptyState(backdrop, "No matches", "Try another title or folder name.", "No results", {})
+        else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 150.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            items(filtered, key = { it.id }) { item -> VideoRow(item, onClick = { onPlay(item) }) }
         }
     }
 }
 
 @Composable
-private fun LibraryScreen(
+private fun VideosScreen(
     backdrop: LayerBackdrop,
     videos: List<VideoItem>,
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
+    selectedFolder: String?,
+    onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onChooseVideoFile: () -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
     val filtered = videos.filter { item ->
         val name = item.name.lowercase(Locale.ROOT)
-        val path = item.relativePath.lowercase(Locale.ROOT)
-        val episodePattern = Regex("""(?i)\b(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3}|season[ ._-]*\d+|episode[ ._-]*\d+)\b""")
-        val episodeLike = episodePattern.containsMatchIn(name)
-        val tvFolder = path.split('/').any { it.trim() in setOf("tv", "tv shows", "shows", "series", "episodes") || it.trim().startsWith("season ") }
-        val animeLike = listOf("anime", "jujutsu", "naruto", "one piece", "bleach", "attack on", "demon slayer", "suzume", "spirited away", "frieren", "ippo").any(name::contains) || path.contains("anime")
-        when (category) {
-            "Movies" -> !episodeLike && !tvFolder
-            "TV Shows" -> episodeLike || tvFolder
-            "Anime" -> animeLike
+        val matchesCategory = when (category) {
+            "Movies" -> !Regex("""(?i)\b(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3}|season[ ._-]*\d+|episode[ ._-]*\d+)\b""").containsMatchIn(name) &&
+                !item.relativePath.lowercase(Locale.ROOT).split('/').any { it.trim() in setOf("tv", "tv shows", "shows", "series", "episodes") || it.trim().startsWith("season ") }
+            "TV Shows" -> Regex("""(?i)\b(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3}|season[ ._-]*\d+|episode[ ._-]*\d+)\b""").containsMatchIn(name) ||
+                item.relativePath.lowercase(Locale.ROOT).split('/').any { it.trim() in setOf("tv", "tv shows", "shows", "series", "episodes") || it.trim().startsWith("season ") }
+            "Anime" -> listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
+            "Recent" -> true
             else -> true
         }
+        matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
     }.let { if (category == "Recent") it.sortedByDescending(VideoItem::dateAddedSeconds) else it }
+
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Library", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { category = if (category == "Recent") "All" else "Recent" }) {
-                Icon(Icons.Default.Tune, contentDescription = "Sort recently added", tint = MaterialTheme.colorScheme.onBackground)
+        Row(
+            Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = { category = if (category == "All") "Recent" else "All" }) {
+                Icon(Icons.Default.Tune, contentDescription = "Sort videos", tint = MaterialTheme.colorScheme.onBackground)
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!selectedFolder.isNullOrBlank()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Folder: $selectedFolder", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearFolder) { Text("Clear", color = MaterialTheme.colorScheme.onBackground) }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             listOf("All", "Movies", "TV Shows", "Anime", "Recent").forEach { label ->
                 FilterChip(
-                    selected = category == label, onClick = { category = label }, label = { Text(label) },
+                    selected = category == label,
+                    onClick = { category = label },
+                    label = { Text(label) },
                     colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.16f),
                         selectedLabelColor = MaterialTheme.colorScheme.onBackground,
@@ -322,12 +292,73 @@ private fun LibraryScreen(
             }
         }
         if (!hasPermission) {
-            EmptyState(backdrop, "Video permission needed", "Allow access to list videos on your device.", "Allow access", onRequestPermission)
+            EmptyState(
+                backdrop,
+                title = "Your videos stay on your device",
+                message = "Allow video access to build your local library, or open a file directly.",
+                action = "Allow video access",
+                onAction = onRequestPermission,
+                secondaryAction = "Choose a video file",
+                onSecondaryAction = onChooseVideoFile
+            )
         } else if (filtered.isEmpty()) {
-            EmptyState(backdrop, if (videos.isEmpty()) "No videos found" else "Nothing matches", if (videos.isEmpty()) "Videos on your device will appear here after a media scan." else "Try another filter.", "Choose a video file", onChooseVideoFile)
+            EmptyState(
+                backdrop,
+                title = if (videos.isEmpty()) "No videos found" else "Nothing matches",
+                message = if (videos.isEmpty()) "Videos on your device will appear here after a media scan." else "Try another filter or search term.",
+                action = "Choose a video file",
+                onAction = onChooseVideoFile
+            )
         } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 150.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 items(filtered, key = { it.id }) { item -> VideoRow(item, onClick = { onPlay(item) }) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FoldersScreen(
+    backdrop: LayerBackdrop,
+    videos: List<VideoItem>,
+    hasPermission: Boolean,
+    onFolderSelected: (String) -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        Text("Folder", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 18.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        if (!hasPermission) {
+            EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected("") })
+        } else {
+            val folders = videos.groupBy { it.folderName }.toList().sortedBy { it.first.lowercase(Locale.ROOT) }
+            if (folders.isEmpty()) {
+                EmptyState(backdrop, title = "No folders yet", message = "Folders containing video files will appear here.", action = "Refresh library", onAction = { onFolderSelected("") })
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(folders, key = { it.first }) { (name, folderVideos) ->
+                        Column(Modifier.fillMaxWidth().clickable { onFolderSelected(name) }) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(54.dp))
+                                Spacer(Modifier.width(16.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                                    Text("${folderVideos.size} media files", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Icon(Icons.Default.ViewList, contentDescription = "Open folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -387,7 +418,8 @@ private fun SettingsScreen(
                     backdrop, "Player features",
                     listOf(
                         ActionItem(Icons.Default.Audiotrack, "Audio tracks", "Choose an audio language while playing", {}),
-                        ActionItem(Icons.Default.ClosedCaption, "Subtitles", "Embedded and external subtitle tracks", {})
+                        ActionItem(Icons.Default.ClosedCaption, "Subtitles", "Embedded and external subtitle tracks", {}),
+                        ActionItem(Icons.Default.Storage, "Internal storage", "Browse device folders from the Browse tab", {})
                     )
                 )
             }
@@ -489,8 +521,7 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
             try {
                 retriever.setDataSource(context, item.uri)
                 val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: item.durationMs
-                val frameAtUs = duration.coerceAtLeast(0L) * 100L
-                retriever.getFrameAtTime(frameAtUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                retriever.getFrameAtTime(duration.coerceAtLeast(0L) * 100L, MediaMetadataRetriever.OPTION_CLOSEST)
                     ?: if (Build.VERSION.SDK_INT >= 29) runCatching { context.contentResolver.loadThumbnail(item.uri, Size(320, 180), null) }.getOrNull() else null
             } catch (_: Exception) {
                 if (Build.VERSION.SDK_INT >= 29) runCatching { context.contentResolver.loadThumbnail(item.uri, Size(320, 180), null) }.getOrNull() else null
@@ -498,7 +529,7 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
         }
     }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
-    val progressFraction = remember(item.uri, item.durationMs, preferences) {
+    val progress = remember(item.uri, item.durationMs, preferences) {
         val saved = preferences.getLong("playback_position_${item.uri.toString().hashCode()}", 0L)
         if (item.durationMs > 0L) (saved.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     }
@@ -508,8 +539,8 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
             else Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
             if (item.durationMs > 0L) Text(formatDuration(item.durationMs), Modifier.align(Alignment.BottomEnd).padding(4.dp).background(Color.Black.copy(alpha = 0.76f), RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White, fontSize = 10.sp)
             Canvas(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp)) {
-                drawRect(Color.White.copy(alpha = 0.3f))
-                if (progressFraction > 0f) drawRect(Color.White, size = this.size.copy(width = this.size.width * progressFraction))
+                drawRect(Color.White.copy(alpha = 0.32f))
+                if (progress > 0f) drawRect(Color.White, size = this.size.copy(width = this.size.width * progress))
             }
         }
         Spacer(Modifier.width(12.dp))
@@ -560,27 +591,38 @@ private fun BottomNavigation(
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
-    val navItems = listOf(Icons.Default.Home to "Home", Icons.Default.VideoLibrary to "Library", Icons.Default.Settings to "Settings")
+    val navItems = listOf(Icons.Default.Movie to "Videos", Icons.Default.Folder to "Folders", Icons.Default.Settings to "Settings")
     val active = navItems[selectedTab.coerceIn(0, 2)]
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (!searchExpanded) {
-            LiquidBottomTabs(selectedTabIndex = selectedTab.coerceIn(0, 2), onTabSelected = onTabSelected, backdrop = backdrop, tabsCount = 3, modifier = Modifier.fillMaxWidth(0.72f).height(64.dp)) {
+            LiquidBottomTabs(
+                selectedTabIndex = selectedTab.coerceIn(0, 2),
+                onTabSelected = onTabSelected,
+                backdrop = backdrop,
+                tabsCount = navItems.size,
+                modifier = Modifier.weight(1f).height(64.dp)
+            ) {
                 navItems.forEachIndexed { index, (icon, label) ->
                     LiquidBottomTab(onClick = { onTabSelected(index) }) {
-                        Icon(icon, label, tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(21.dp))
+                        Icon(icon, contentDescription = label, tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
                         Text(label, color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), maxLines = 1)
                     }
                 }
             }
-            GlassSurface(backdrop, Modifier.size(62.dp).clip(CircleShape).clickable {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                onSearchExpandedChange(true)
-            }, cornerRadius = 50.dp, surfaceAlpha = 0.085f) {
-                Icon(Icons.Default.Search, "Search library", tint = Color.White, modifier = Modifier.align(Alignment.Center).size(26.dp))
+            GlassSurface(
+                backdrop = backdrop,
+                modifier = Modifier.size(62.dp).clip(CircleShape).clickable {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onSearchExpandedChange(true)
+                },
+                cornerRadius = 50.dp,
+                surfaceAlpha = 0.085f
+            ) {
+                Icon(Icons.Default.Search, contentDescription = "Search library", tint = Color.White, modifier = Modifier.align(Alignment.Center).size(26.dp))
             }
         } else {
             GlassSurface(backdrop, Modifier.size(62.dp).clip(CircleShape), cornerRadius = 50.dp, surfaceAlpha = 0.085f) {
-                Icon(active.first, active.second, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(26.dp))
+                Icon(active.first, contentDescription = active.second, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(25.dp))
             }
             GlassSurface(backdrop, Modifier.weight(1f).height(62.dp), cornerRadius = 50.dp, surfaceAlpha = 0.11f) {
                 Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -588,14 +630,25 @@ private fun BottomNavigation(
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         onSearchQueryChange("")
                         onSearchExpandedChange(false)
-                    }) { Icon(Icons.Default.ArrowBack, "Collapse search", tint = Color.White) }
-                    BasicTextField(value = searchQuery, onValueChange = onSearchQueryChange, modifier = Modifier.weight(1f), singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White), cursorBrush = SolidColor(Color.White), decorationBox = { inner ->
-                        Box {
-                            if (searchQuery.isEmpty()) Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
-                            inner()
+                    }) { Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = Color.White) }
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = onSearchQueryChange,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                        cursorBrush = SolidColor(Color.White),
+                        decorationBox = { inner ->
+                            Box {
+                                if (searchQuery.isEmpty()) Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
+                                inner()
+                            }
                         }
-                    })
-                    if (searchQuery.isNotEmpty()) IconButton(onClick = { onSearchQueryChange("") }) { Icon(Icons.Default.Close, "Clear search", tint = Color.LightGray) }
+                    )
+                    if (searchQuery.isNotEmpty()) IconButton(onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onSearchQueryChange("")
+                    }) { Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray) }
                 }
             }
         }
