@@ -2,11 +2,8 @@ package com.tejas.liquidplayer.data
 
 import android.content.ContentUris
 import android.content.ContentResolver
-import android.content.Context
-import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import androidx.documentfile.provider.DocumentFile
 import java.util.Locale
 
 class VideoRepository(private val resolver: ContentResolver) {
@@ -56,23 +53,7 @@ class VideoRepository(private val resolver: ContentResolver) {
         return results
     }
 
-    fun listTree(context: Context, treeUri: Uri?, path: List<String>): List<BrowseEntry> {
-        if (treeUri == null) return emptyList()
-        var folder: DocumentFile? = DocumentFile.fromTreeUri(context, treeUri)
-        path.forEach { segment -> folder = folder?.findFile(segment) }
-        return folder?.listFiles()
-            ?.map { file ->
-                BrowseEntry(
-                    name = file.name ?: "Unnamed",
-                    uri = file.uri,
-                    isDirectory = file.isDirectory,
-                    sizeBytes = file.length(),
-                    mimeType = file.type
-                )
-            }
-            ?.sortedWith(compareByDescending<BrowseEntry> { it.isDirectory }.thenBy { it.name.lowercase(Locale.ROOT) })
-            .orEmpty()
-    }
+
 }
 
 fun formatDuration(durationMs: Long): String {
