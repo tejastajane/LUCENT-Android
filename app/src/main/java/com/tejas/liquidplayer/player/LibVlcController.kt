@@ -173,6 +173,11 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     fun currentAudioTrackId(): Int = runCatching { player.audioTrack }.getOrDefault(-1)
 
     fun currentSubtitleTrackId(): Int = runCatching { player.spuTrack }.getOrDefault(-1)
+    fun currentSubtitleDelayUs(): Long = runCatching { player.spuDelay }.getOrDefault(0L)
+    fun setSubtitleDelayUs(delayUs: Long): Boolean {
+        if (released) return false
+        return runCatching { player.setSpuDelay(delayUs); true }.getOrDefault(false)
+    }
 
     fun selectAudioTrack(id: Int): Boolean =
         !released && runCatching { player.setAudioTrack(id) }.getOrDefault(false)
