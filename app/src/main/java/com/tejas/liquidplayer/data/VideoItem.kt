@@ -16,12 +16,4 @@ data class VideoItem(
         get() = relativePath.trimEnd('/').substringAfterLast('/').ifBlank { "Internal storage" }
 }
 
-data class BrowseEntry(
-    val name: String,
-    val uri: Uri,
-    val isDirectory: Boolean,
-    val sizeBytes: Long,
-    val mimeType: String?
-)
-
 data class TrackOption(val id: Int, val label: String)
