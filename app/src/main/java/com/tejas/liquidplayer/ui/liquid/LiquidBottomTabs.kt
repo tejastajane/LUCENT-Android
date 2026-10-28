@@ -290,7 +290,7 @@ fun LiquidBottomTabs(
                         drawRect(Color.Black.copy(alpha = 0.035f * progress))
                     }
                 )
-                .border(1f.dp, Color.White.copy(alpha = 0.19f), RoundedCornerShape(50f))
+                .border(1f.dp, Color.White.copy(alpha = 0.19f), RoundedCornerShape(50.dp))
                 .height(64f.dp)
                 .fillMaxWidth(1f / tabsCount)
         )
