@@ -40,6 +40,7 @@ fun GlassSurface(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 24.dp,
     surfaceAlpha: Float = 0.055f,
+    navMaterial: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
@@ -53,13 +54,24 @@ fun GlassSurface(
                 // and chromatic aberration off. The proportional lens scales naturally
                 // from small player buttons to larger panels.
                 vibrancy()
-                blur(0.dp.toPx())
-                lens(
-                    refractionHeight = size.minDimension * 0.1f,
-                    refractionAmount = size.minDimension * 0.2f,
-                    depthEffect = true,
-                    chromaticAberration = false
-                )
+                if (navMaterial) {
+                    // Match the LiquidBottomTabs' inactive frosted-glass material.
+                    blur(8.dp.toPx())
+                    lens(
+                        refractionHeight = 24.dp.toPx(),
+                        refractionAmount = 24.dp.toPx(),
+                        depthEffect = true,
+                        chromaticAberration = false
+                    )
+                } else {
+                    blur(0.dp.toPx())
+                    lens(
+                        refractionHeight = size.minDimension * 0.1f,
+                        refractionAmount = size.minDimension * 0.2f,
+                        depthEffect = true,
+                        chromaticAberration = false
+                    )
+                }
             },
             highlight = {
                 // The library's GlassPlayground uses a plain, neutral highlight.
