@@ -1,5 +1,6 @@
 package com.tejas.liquidplayer.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -14,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -83,7 +85,8 @@ fun GlassSurface(
                 Highlight.Plain.copy(
                     width = 1.1.dp,
                     blurRadius = 1.25.dp,
-                    alpha = if (flatNavMaterial) 0f else 0.9f
+                    // Keep a subtle upper-edge reflection on the otherwise-flat Play pill.
+                    alpha = if (flatNavMaterial) 0.38f else 0.9f
                 )
             },
             shadow = {
@@ -91,7 +94,7 @@ fun GlassSurface(
                     radius = 14.dp,
                     offset = DpOffset(0.dp, 2.dp),
                     color = Color.Black.copy(alpha = 0.42f),
-                    alpha = if (flatNavMaterial) 0f else 0.95f
+                    alpha = if (flatNavMaterial) 0.24f else 0.95f
                 )
             },
             innerShadow = {
@@ -99,17 +102,43 @@ fun GlassSurface(
                     radius = 2.dp,
                     offset = DpOffset(0.dp, (-0.75).dp),
                     color = Color.White.copy(alpha = 0.14f),
-                    alpha = if (flatNavMaterial) 0f else 0.85f
+                    alpha = if (flatNavMaterial) 0.32f else 0.85f
                 )
             },
             onDrawSurface = {
                 if (navMaterial) {
-                    // Translucent and theme-aware; never add a solid underlay.
+                    // One continuous translucent base: black content must not show through
+                    // the Play pill as a slit. The gradient remains neutral, not blue-tinted.
                     drawRect(navbarInactiveMaterial)
+                    if (flatNavMaterial) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = if (isLightSurface) 0.018f else 0.04f),
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = if (isLightSurface) 0.02f else 0.065f)
+                                ),
+                                startY = 0f,
+                                endY = size.height
+                            )
+                        )
+                    }
                 } else {
                     drawRect(Color.White.copy(alpha = surfaceAlpha))
                     drawRect(Color.Black.copy(alpha = 0.018f))
                 }
+            }
+        ).then(
+            if (flatNavMaterial) {
+                // The same fine reflective rim used by the navbar, with no heavy bevel.
+                Modifier.border(
+                    width = 1.dp,
+                    color = if (isLightSurface) Color.Black.copy(alpha = 0.14f)
+                    else Color.White.copy(alpha = 0.18f),
+                    shape = shape
+                )
+            } else {
+                Modifier
             }
         ),
         content = content

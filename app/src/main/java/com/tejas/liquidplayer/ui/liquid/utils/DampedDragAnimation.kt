@@ -115,16 +115,29 @@ class DampedDragAnimation(
         }
     }
 
-    fun animateToValue(value: Float) {
+    fun animateToValue(value: Float, withPressFeedback: Boolean = true) {
         animationScope.launch {
             mutatorMutex.mutate {
-                press()
+                if (withPressFeedback) press()
                 val targetValue = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(targetValue, valueAnimationSpec) }
+                val animationSpec = if (withPressFeedback) {
+                    valueAnimationSpec
+                } else {
+                    // Ordinary tab taps should settle quickly; reserve the scale bounce
+                    // for an actual drag gesture.
+                    spring(1f, 1_800f, visibilityThreshold)
+                }
+                launch { valueAnimation.animateTo(targetValue, animationSpec) }
                 if (velocity != 0f) {
                     launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
                 }
-                release()
+                if (withPressFeedback) {
+                    release()
+                } else {
+                    launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+                    launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
+                    launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
+                }
             }
         }
     }

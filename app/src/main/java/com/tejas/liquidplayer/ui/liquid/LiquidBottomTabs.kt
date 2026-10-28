@@ -154,7 +154,7 @@ fun LiquidBottomTabs(
             snapshotFlow { currentIndex }
                 .drop(1)
                 .collectLatest { index ->
-                    dampedDragAnimation.animateToValue(index.toFloat())
+                    dampedDragAnimation.animateToValue(index.toFloat(), withPressFeedback = false)
                     onTabSelected(index)
                 }
         }

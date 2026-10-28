@@ -7,13 +7,6 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -122,77 +115,84 @@ fun LiquidPlayerApp(
         }
     }
 
-    AnimatedContent(
-        targetState = selectedVideo,
-        transitionSpec = {
-            if (targetState == null) {
-                (slideInHorizontally(tween(280)) { -it / 3 } + fadeIn(tween(180))) togetherWith
-                    (slideOutHorizontally(tween(240)) { it / 4 } + fadeOut(tween(120)))
-            } else {
-                (slideInHorizontally(tween(280)) { it } + fadeIn(tween(180))) togetherWith
-                    (slideOutHorizontally(tween(240)) { -it / 4 } + fadeOut(tween(120)))
-            }
-        },
-        label = "library-player-transition"
-    ) { activeVideo ->
-        if (activeVideo != null) {
-            val playbackQueue = remember(videos, activeVideo) {
-                if (videos.any { it.uri == activeVideo.uri }) videos
-                else listOf(activeVideo) + videos.filterNot { it.uri == activeVideo.uri }
-            }
-            LiquidPlayerTheme(darkTheme = true) {
-                VideoPlayerScreen(
-                    video = activeVideo,
-                    playlist = playbackQueue,
-                    onSelectVideo = ::openVideo,
-                    onClose = { selectedVideo = null },
-                    hardwareAcceleration = hardwareAcceleration,
-                    gesturesEnabled = gesturesEnabled,
-                    isInPictureInPictureMode = isInPictureInPictureMode
-                )
-            }
-        } else {
-            val hasResumeHistory = lastPlayedVideo?.let {
-                preferences.getLong("playback_position_${it.uri.toString().hashCode()}", 0L) > 1_500L
-            } ?: false
-            MainLibraryUi(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it },
-                videos = videos,
-                hasVideoPermission = hasVideoPermission,
-                onRequestMediaPermission = {
-                    val permissions = when {
-                        Build.VERSION.SDK_INT >= 34 -> arrayOf(
-                            Manifest.permission.READ_MEDIA_VIDEO,
-                            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
-                        )
-                        Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
-                        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    }
-                    mediaPermissionLauncher.launch(permissions)
-                },
-                onPlay = ::openVideo,
-                recentVideo = lastPlayedVideo ?: videos.maxByOrNull { it.dateAddedSeconds },
-                hasResumeHistory = hasResumeHistory,
-                onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
+    // Keep libVLC's native TextureView out of AnimatedContent's graphics-layer
+    // transition, which can black out or destabilize native video output on device.
+    val activeVideo = selectedVideo
+    if (activeVideo != null) {
+        val playbackQueue = remember(videos, activeVideo) {
+            if (videos.any { it.uri == activeVideo.uri }) videos
+            else listOf(activeVideo) + videos.filterNot { it.uri == activeVideo.uri }
+        }
+        LiquidPlayerTheme(darkTheme = true) {
+            VideoPlayerScreen(
+                video = activeVideo,
+                playlist = playbackQueue,
+                onSelectVideo = ::openVideo,
+                onClose = { selectedVideo = null },
                 hardwareAcceleration = hardwareAcceleration,
-                onHardwareAccelerationChanged = {
-                    hardwareAcceleration = it
-                    preferences.edit().putBoolean("hardware_acceleration", it).apply()
-                },
                 gesturesEnabled = gesturesEnabled,
-                onGesturesEnabledChanged = {
-                    gesturesEnabled = it
-                    preferences.edit().putBoolean("gestures_enabled", it).apply()
-                },
-                isDarkTheme = isDarkTheme,
-                onThemeChanged = onThemeChanged,
-                onRescan = {
-                    hasVideoPermission = hasMediaPermission(context)
-                    mediaRefreshToken++
-                }
+                isInPictureInPictureMode = isInPictureInPictureMode
             )
         }
+    } else {
+        val playableLastPlayed = remember(lastPlayedVideo, videos, context) {
+            val saved = lastPlayedVideo ?: return@remember null
+            videos.firstOrNull { it.uri == saved.uri } ?: saved.takeIf { item ->
+                item.relativePath == "Selected files/" &&
+                    runCatching {
+                        context.contentResolver.persistedUriPermissions.any {
+                            it.uri == item.uri && it.isReadPermission
+                        }
+                    }.getOrDefault(false)
+            }
+        }
+        val savedPositionMs = playableLastPlayed?.let {
+            preferences.getLong("playback_position_${it.uri.toString().hashCode()}", 0L)
+        } ?: 0L
+        val savedDurationMs = playableLastPlayed?.durationMs ?: 0L
+        val hasResumeHistory = playableLastPlayed != null &&
+            savedPositionMs > 1_500L &&
+            (savedDurationMs <= 0L || savedPositionMs < savedDurationMs - 2_500L)
+        val latestVideo = videos.maxByOrNull { it.dateAddedSeconds }
+        // Resume only when valid progress exists; otherwise Play opens the newest video.
+        val recentVideo = if (hasResumeHistory) playableLastPlayed else latestVideo ?: playableLastPlayed
+        MainLibraryUi(
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
+            videos = videos,
+            hasVideoPermission = hasVideoPermission,
+            onRequestMediaPermission = {
+                val permissions = when {
+                    Build.VERSION.SDK_INT >= 34 -> arrayOf(
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+                    )
+                    Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+                    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+                mediaPermissionLauncher.launch(permissions)
+            },
+            onPlay = ::openVideo,
+            recentVideo = recentVideo,
+            hasResumeHistory = hasResumeHistory,
+            onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
+            hardwareAcceleration = hardwareAcceleration,
+            onHardwareAccelerationChanged = {
+                hardwareAcceleration = it
+                preferences.edit().putBoolean("hardware_acceleration", it).apply()
+            },
+            gesturesEnabled = gesturesEnabled,
+            onGesturesEnabledChanged = {
+                gesturesEnabled = it
+                preferences.edit().putBoolean("gestures_enabled", it).apply()
+            },
+            isDarkTheme = isDarkTheme,
+            onThemeChanged = onThemeChanged,
+            onRescan = {
+                hasVideoPermission = hasMediaPermission(context)
+                mediaRefreshToken++
+            }
+        )
     }
 }
 
