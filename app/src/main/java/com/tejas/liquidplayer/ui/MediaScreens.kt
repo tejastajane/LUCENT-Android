@@ -15,6 +15,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
@@ -26,6 +30,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -86,6 +91,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -101,7 +107,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
-import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -599,34 +604,46 @@ private fun BottomNavigation(
     )
     val active = navItems[selectedTab.coerceIn(0, navItems.lastIndex)]
 
-    AnimatedContent(
-        targetState = searchExpanded,
+    BoxWithConstraints(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        transitionSpec = {
-            if (targetState) {
-                (fadeIn(tween(190, delayMillis = 60)) + slideInHorizontally(tween(300)) { it / 10 }) togetherWith
-                    (fadeOut(tween(110)) + slideOutHorizontally(tween(210)) { -it / 12 })
-            } else {
-                (fadeIn(tween(190, delayMillis = 45)) + slideInHorizontally(tween(300)) { -it / 10 }) togetherWith
-                    (fadeOut(tween(110)) + slideOutHorizontally(tween(210)) { it / 12 })
-            }
-        },
-        label = "bottom-tabs-search-morph"
-    ) { expanded ->
-        if (!expanded) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        contentAlignment = Alignment.Center
+    ) {
+        // Keep the whole control group centered and the same width during the morph.
+        // The tabs shrink while the search circle grows into the search field.
+        val groupWidth = maxWidth * 0.69f + 74.dp
+        val transition = updateTransition(targetState = searchExpanded, label = "navbar-search-morph")
+        val tabsWidth by transition.animateDp(
+            transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
+            label = "tabs-width"
+        ) { expanded -> if (expanded) 0.dp else maxWidth * 0.69f }
+        val activeWidth by transition.animateDp(
+            transitionSpec = { spring(dampingRatio = 0.82f, stiffness = 500f) },
+            label = "active-tab-width"
+        ) { expanded -> if (expanded) 40.dp else 0.dp }
+        val searchWidth by transition.animateDp(
+            transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
+            label = "search-width"
+        ) { expanded -> if (expanded) maxWidth * 0.69f + 22.dp else 62.dp }
+        val tabsAlpha by transition.animateFloat(
+            transitionSpec = { spring(dampingRatio = 0.9f, stiffness = 500f) },
+            label = "tabs-alpha"
+        ) { expanded -> if (expanded) 0f else 1f }
+
+        Row(
+            Modifier.width(groupWidth),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (tabsWidth >= 10.dp) {
                 LiquidBottomTabs(
                     selectedTabIndex = selectedTab.coerceIn(0, navItems.lastIndex),
                     onTabSelected = onTabSelected,
                     backdrop = backdrop,
                     tabsCount = navItems.size,
-                    modifier = Modifier.fillMaxWidth(0.69f).height(64.dp)
+                    modifier = Modifier.width(tabsWidth).height(64.dp).graphicsLayer { alpha = tabsAlpha }
                 ) {
                     navItems.forEachIndexed { index, (icon, label) ->
+                        // Keep the original app's exact tab icons and labels.
                         LiquidBottomTab(onClick = { onTabSelected(index) }) {
                             Icon(
                                 imageVector = icon,
@@ -643,88 +660,118 @@ private fun BottomNavigation(
                         }
                     }
                 }
-                GlassSurface(
-                    backdrop = backdrop,
-                    modifier = Modifier.size(62.dp).clip(CircleShape).clickable {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        onSearchExpandedChange(true)
-                    },
-                    cornerRadius = 50.dp,
-                    surfaceAlpha = 0.055f,
-                    navMaterial = true
-                ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "Search library",
-                        tint = Color.White,
-                        modifier = Modifier.align(Alignment.Center).size(26.dp)
-                    )
-                }
+            } else {
+                Spacer(Modifier.width(tabsWidth).height(64.dp))
             }
-        } else {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+
+            if (activeWidth >= 1.dp) {
                 GlassSurface(
                     backdrop = backdrop,
-                    modifier = Modifier.size(62.dp).clip(CircleShape).clickable {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        onSearchQueryChange("")
-                        onSearchExpandedChange(false)
-                    },
-                    cornerRadius = 50.dp,
-                    surfaceAlpha = 0.055f,
-                    navMaterial = true
-                ) {
-                    Icon(
-                        active.first,
-                        contentDescription = "Return to ${active.second}",
-                        tint = Color.White,
-                        modifier = Modifier.align(Alignment.Center).size(25.dp)
-                    )
-                }
-                GlassSurface(
-                    backdrop = backdrop,
-                    modifier = Modifier.weight(1f).height(62.dp),
-                    cornerRadius = 50.dp,
-                    surfaceAlpha = 0.055f,
-                    navMaterial = true
-                ) {
-                    Row(
-                        Modifier.fillMaxSize().padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
+                    modifier = Modifier.width(activeWidth).height(activeWidth)
+                        .clip(CircleShape)
+                        .clickable {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             onSearchQueryChange("")
                             onSearchExpandedChange(false)
-                        }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = Color.White)
+                        },
+                    cornerRadius = 50.dp,
+                    surfaceAlpha = 0.055f,
+                    navMaterial = true
+                ) {
+                    AnimatedContent(
+                        targetState = searchExpanded,
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                        transitionSpec = {
+                            fadeIn(tween(180)) togetherWith fadeOut(tween(110))
+                        },
+                        label = "active-tab-icon"
+                    ) { showActive ->
+                        if (showActive) {
+                            Icon(
+                                imageVector = active.first,
+                                contentDescription = "Return to ${active.second}",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
-                        BasicTextField(
-                            value = searchQuery,
-                            onValueChange = onSearchQueryChange,
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                            cursorBrush = SolidColor(Color.White),
-                            decorationBox = { inner ->
-                                Box {
-                                    if (searchQuery.isEmpty()) {
-                                        Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
-                                    }
-                                    inner()
-                                }
-                            }
-                        )
-                        if (searchQuery.isNotEmpty()) {
+                    }
+                }
+            } else {
+                Spacer(Modifier.width(activeWidth))
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            val searchModifier = Modifier.width(searchWidth).height(62.dp).clip(
+                if (searchExpanded) RoundedCornerShape(50.dp) else CircleShape
+            ).then(
+                if (!searchExpanded) Modifier.clickable {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onSearchExpandedChange(true)
+                } else Modifier
+            )
+            GlassSurface(
+                backdrop = backdrop,
+                modifier = searchModifier,
+                cornerRadius = 50.dp,
+                surfaceAlpha = 0.055f,
+                navMaterial = true
+            ) {
+                AnimatedContent(
+                    targetState = searchExpanded,
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                    transitionSpec = {
+                        if (targetState) {
+                            (fadeIn(tween(150, delayMillis = 70)) + slideInHorizontally(tween(230)) { it / 8 }) togetherWith
+                                (fadeOut(tween(90)) + slideOutHorizontally(tween(150)) { -it / 8 })
+                        } else {
+                            (fadeIn(tween(150, delayMillis = 40)) + slideInHorizontally(tween(230)) { -it / 8 }) togetherWith
+                                (fadeOut(tween(90)) + slideOutHorizontally(tween(150)) { it / 8 })
+                        }
+                    },
+                    label = "search-button-to-field"
+                ) { expanded ->
+                    if (!expanded) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Search, contentDescription = "Search library", tint = Color.White, modifier = Modifier.size(26.dp))
+                        }
+                    } else {
+                        Row(
+                            Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             IconButton(onClick = {
                                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 onSearchQueryChange("")
+                                onSearchExpandedChange(false)
                             }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray)
+                                Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = Color.White)
+                            }
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = onSearchQueryChange,
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                                cursorBrush = SolidColor(Color.White),
+                                decorationBox = { inner ->
+                                    Box {
+                                        if (searchQuery.isEmpty()) {
+                                            Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
+                                        }
+                                        inner()
+                                    }
+                                }
+                            )
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onSearchQueryChange("")
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray)
+                                }
                             }
                         }
                     }
