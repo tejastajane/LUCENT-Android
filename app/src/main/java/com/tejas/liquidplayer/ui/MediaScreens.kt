@@ -668,7 +668,7 @@ private fun BottomNavigation(
                 }
             ) {
                 navItems.forEachIndexed { index, (icon, label) ->
-                    LiquidBottomTab(onClick = { onTabSelected(index) }) {
+                    LiquidBottomTab(index = index, onClick = { onTabSelected(index) }) {
                         Icon(
                             imageVector = icon,
                             contentDescription = label,

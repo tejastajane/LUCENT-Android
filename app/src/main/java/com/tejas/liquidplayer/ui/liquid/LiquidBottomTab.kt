@@ -21,13 +21,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 internal val LocalLiquidBottomTabScale =
     staticCompositionLocalOf { { 1f } }
 
+internal val LocalLiquidBottomTabImmediateSelect =
+    staticCompositionLocalOf<(Int) -> Unit> { {} }
+
 @Composable
 fun RowScope.LiquidBottomTab(
+    index: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scale = LocalLiquidBottomTabScale.current
+    val selectImmediately = LocalLiquidBottomTabImmediateSelect.current
     Column(
         modifier
             .clip(RoundedCornerShape(50))
@@ -35,7 +40,12 @@ fun RowScope.LiquidBottomTab(
                 interactionSource = null,
                 indication = null,
                 role = Role.Tab,
-                onClick = onClick
+                onClick = {
+                    // Update the glass selector in this click handler, not one frame
+                    // later after the parent selected-tab state recomposes.
+                    selectImmediately(index)
+                    onClick()
+                }
             )
             .fillMaxHeight()
             .weight(1f)

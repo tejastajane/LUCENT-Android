@@ -147,16 +147,32 @@ fun LiquidBottomTabs(
                 }
             )
         }
+        val selectTabImmediately = remember(dampedDragAnimation, tabsCount) {
+            { index: Int ->
+                val targetIndex = index.fastCoerceIn(0, tabsCount - 1)
+                if (currentIndex != targetIndex) {
+                    currentIndex = targetIndex
+                    dampedDragAnimation.animateToValue(
+                        targetIndex.toFloat(),
+                        withPressFeedback = false
+                    )
+                }
+            }
+        }
         LaunchedEffect(selectedTabIndex) {
-            currentIndex = selectedTabIndex
+            val targetIndex = selectedTabIndex.fastCoerceIn(0, tabsCount - 1)
+            if (currentIndex != targetIndex) {
+                currentIndex = targetIndex
+                dampedDragAnimation.animateToValue(
+                    targetIndex.toFloat(),
+                    withPressFeedback = false
+                )
+            }
         }
         LaunchedEffect(dampedDragAnimation) {
             snapshotFlow { currentIndex }
                 .drop(1)
-                .collectLatest { index ->
-                    dampedDragAnimation.animateToValue(index.toFloat(), withPressFeedback = false)
-                    onTabSelected(index)
-                }
+                .collectLatest { index -> onTabSelected(index) }
         }
 
         val interactiveHighlight = remember(animationScope) {
@@ -172,12 +188,15 @@ fun LiquidBottomTabs(
             )
         }
 
-        Row(
-            Modifier
-                .graphicsLayer {
-                    translationX = panelOffset
-                }
-                .drawBackdrop(
+        CompositionLocalProvider(
+            LocalLiquidBottomTabImmediateSelect provides selectTabImmediately
+        ) {
+            Row(
+                Modifier
+                    .graphicsLayer {
+                        translationX = panelOffset
+                    }
+                    .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RoundedCornerShape(50) },
                     effects = {
@@ -197,14 +216,16 @@ fun LiquidBottomTabs(
                 .height(containerHeight)
                 .fillMaxWidth()
                 .padding(4f.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
+                verticalAlignment = Alignment.CenterVertically,
+                content = content
+            )
+        }
 
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
-            }
+            },
+            LocalLiquidBottomTabImmediateSelect provides selectTabImmediately
         ) {
             Row(
                 Modifier
