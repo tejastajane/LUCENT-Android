@@ -89,13 +89,14 @@ fun LiquidBottomTabs(
     ) {
         val density = LocalDensity.current
         val collapse = collapseProgress.coerceIn(0f, 1f)
-        val contentWidthPx = constraints.maxWidth.toFloat() - with(density) { 8.dp.toPx() }
+        val horizontalInset = lerp(4f, 0f, collapse).dp
+        val contentWidthPx = constraints.maxWidth.toFloat() - with(density) { (horizontalInset * 2f).toPx() }
         val tabWidth = contentWidthPx / tabsCount
         val selectedPillWidth = with(density) {
             lerp(tabWidth, contentWidthPx, collapse).toDp()
         }
         val containerHeight = lerp(72f, 62f, collapse).dp
-        val selectedPillHeight = lerp(64f, 54f, collapse).dp
+        val selectedPillHeight = lerp(64f, 62f, collapse).dp
 
         val offsetAnimation = remember { Animatable(0f) }
         val panelOffset by remember(density) {
@@ -242,7 +243,7 @@ fun LiquidBottomTabs(
 
         Box(
             Modifier
-                .padding(horizontal = 4f.dp)
+                .padding(horizontal = horizontalInset)
                 .graphicsLayer {
                     val selectedPosition =
                         if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
