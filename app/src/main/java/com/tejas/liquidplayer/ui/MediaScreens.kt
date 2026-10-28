@@ -613,7 +613,7 @@ private fun BottomNavigation(
     ) {
         // Keep the whole control group centered and the same width during the morph.
         // The tabs shrink while the search circle grows into the search field.
-        val groupWidth = maxWidth * 0.69f + 74.dp
+        val groupWidth = maxWidth * 0.69f + 84.dp
         val transition = updateTransition(targetState = searchExpanded, label = "navbar-search-morph")
         val tabsWidth by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
@@ -626,7 +626,11 @@ private fun BottomNavigation(
         val searchWidth by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
             label = "search-width"
-        ) { expanded -> if (expanded) maxWidth * 0.69f else 62.dp }
+        ) { expanded -> if (expanded) maxWidth * 0.69f + 10.dp else 72.dp }
+        val searchHeight by transition.animateDp(
+            transitionSpec = { spring(dampingRatio = 0.86f, stiffness = 500f) },
+            label = "search-height"
+        ) { expanded -> if (expanded) 62.dp else 72.dp }
         val tabsAlpha by transition.animateFloat(
             transitionSpec = { spring(dampingRatio = 0.9f, stiffness = 500f) },
             label = "tabs-alpha"
@@ -706,7 +710,7 @@ private fun BottomNavigation(
 
             Spacer(Modifier.width(12.dp))
 
-            val searchModifier = Modifier.width(searchWidth).height(62.dp).clip(
+            val searchModifier = Modifier.width(searchWidth).height(searchHeight).clip(
                 if (searchExpanded) RoundedCornerShape(50.dp) else CircleShape
             ).then(
                 if (!searchExpanded) Modifier.clickable {
