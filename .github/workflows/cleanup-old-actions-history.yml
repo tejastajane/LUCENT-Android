@@ -1,0 +1,63 @@
+name: Clean old Actions history
+
+on:
+  push:
+    branches:
+      - "maintenance/cleanup-action-history"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-actions-history
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Remove stale completed workflow runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Keep newest completed run and all in-progress runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runs_json_query='.workflow_runs[] | [.id, .status, .created_at] | @tsv'
+          mapfile -t run_rows < <(
+            gh api --paginate "repos/${REPOSITORY}/actions/runs?per_page=100" --jq "${runs_json_query}"
+          )
+
+          keep_completed_id="$(
+            printf '%s\n' "${run_rows[@]}" |
+              awk -F '\t' '$2 == "completed" { print $1 "\t" $3 }' |
+              sort -t $'\t' -k2,2r |
+              head -n 1 |
+              cut -f1
+          )"
+
+          if [[ -z "${keep_completed_id}" ]]; then
+            echo "No completed workflow runs found; nothing to delete."
+            exit 0
+          fi
+
+          echo "Keeping newest completed run: ${keep_completed_id}"
+          echo "All queued/in-progress runs will also be preserved."
+
+          deleted=0
+          while IFS=$'\t' read -r run_id status created_at; do
+            [[ -n "${run_id}" ]] || continue
+            [[ "${status}" == "completed" ]] || continue
+            [[ "${run_id}" == "${keep_completed_id}" ]] && continue
+
+            echo "Deleting stale completed run ${run_id} (${created_at})"
+            gh api --silent --method DELETE "repos/${REPOSITORY}/actions/runs/${run_id}"
+            deleted=$((deleted + 1))
+          done < <(printf '%s\n' "${run_rows[@]}" | sort -t $'\t' -k3,3r)
+
+          echo "Cleanup finished. Deleted ${deleted} old completed workflow runs."
