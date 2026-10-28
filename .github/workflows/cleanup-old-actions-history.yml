@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Keep newest completed run and all in-progress runs
+      - name: Keep newest usable Android build and all in-progress runs
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -42,31 +42,20 @@ jobs:
           )"
 
           if [[ -z "${keep_completed_id}" ]]; then
-            echo "No completed workflow runs found; nothing to delete."
-            exit 0
+            echo "No completed usable Android build exists; keeping all in-progress runs."
+            keep_completed_id="__keep_no_completed_build__"
+          else
+            echo "Keeping newest usable Android build run: ${keep_completed_id}"
           fi
 
-          echo "Keeping newest completed run: ${keep_completed_id}"
-          echo "All queued/in-progress runs will also be preserved."
-
           deleted=0
-          while IFS=
+          while IFS=$'\t' read -r run_id status created_at workflow_name conclusion; do
             [[ -n "${run_id}" ]] || continue
+            # Active runs are never deleted; they may be generating the next APK.
             [[ "${status}" == "completed" ]] || continue
             [[ "${run_id}" == "${keep_completed_id}" ]] && continue
 
-            echo "Deleting stale completed run ${run_id} (${created_at})"
-            gh api --silent --method DELETE "repos/${REPOSITORY}/actions/runs/${run_id}"
-            deleted=$((deleted + 1))
-          done < <(printf '%s\n' "${run_rows[@]}" | sort -t $'\t' -k3,3r)
-
-          echo "Cleanup finished. Deleted ${deleted} old completed workflow runs."
-\t' read -r run_id status created_at workflow_name conclusion; do
-            [[ -n "${run_id}" ]] || continue
-            [[ "${status}" == "completed" ]] || continue
-            [[ "${run_id}" == "${keep_completed_id}" ]] && continue
-
-            echo "Deleting stale completed run ${run_id} (${created_at})"
+            echo "Deleting stale completed run ${run_id} (${workflow_name}, ${conclusion}, ${created_at})"
             gh api --silent --method DELETE "repos/${REPOSITORY}/actions/runs/${run_id}"
             deleted=$((deleted + 1))
           done < <(printf '%s\n' "${run_rows[@]}" | sort -t $'\t' -k3,3r)
