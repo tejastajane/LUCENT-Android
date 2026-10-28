@@ -78,8 +78,8 @@ fun LiquidBottomTabs(
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    // Preserve the library's blue active SVG in light theme; dark theme stays neutral white.
-    val accentColor = if (isLightTheme) Color(0xFF0A84FF) else Color.White
+    // Keep the refracted glass itself neutral; only the active SVG is blue in light theme.
+    val accentColor = Color.White
     val containerColor = if (isLightTheme) Color.Black.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.055f)
 
     val tabsBackdrop = rememberLayerBackdrop()
