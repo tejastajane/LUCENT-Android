@@ -158,9 +158,12 @@ fun MainLibraryUi(
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 AnimatedContent(
                     targetState = if (searchQuery.isNotBlank()) 3 else selectedTab.coerceIn(0, 2),
-                    // Keep the glass navigation stationary while only page content crossfades.
+                    // Directional page transitions are preserved; the navbar remains a separate sibling layer.
                     transitionSpec = {
-                        fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                        if (targetState > initialState) (slideInHorizontally(tween(250)) { it / 3 } + fadeIn(tween(160))) togetherWith
+                            (slideOutHorizontally(tween(220)) { -it / 4 } + fadeOut(tween(120)))
+                        else (slideInHorizontally(tween(250)) { -it / 3 } + fadeIn(tween(160))) togetherWith
+                            (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(120)))
                     },
                     label = "videos-folders-settings-transition"
                 ) { tab ->
@@ -609,18 +612,22 @@ private fun BottomNavigation(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Keep the whole control group centered and the same width during the morph.
-        // The tabs shrink while the search circle grows into the search field.
+        // Keep a single navigation surface alive during the morph: its selected
+        // glass pill grows into the compact active-tab button instead of being replaced.
         val groupWidth = maxWidth * 0.69f + 84.dp
         val transition = updateTransition(targetState = searchExpanded, label = "navbar-search-morph")
         val tabsWidth by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 320f) },
             label = "tabs-width"
-        ) { expanded -> if (expanded) 0.dp else maxWidth * 0.69f }
-        val activeWidth by transition.animateDp(
+        ) { expanded -> if (expanded) 62.dp else maxWidth * 0.69f }
+        val tabsHeight by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 360f) },
-            label = "active-tab-width"
-        ) { expanded -> if (expanded) 62.dp else 0.dp }
+            label = "tabs-height"
+        ) { expanded -> if (expanded) 62.dp else 72.dp }
+        val collapseProgress by transition.animateFloat(
+            transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 360f) },
+            label = "navbar-collapse-progress"
+        ) { expanded -> if (expanded) 1f else 0f }
         val searchWidth by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
             label = "search-width"
@@ -629,75 +636,50 @@ private fun BottomNavigation(
             transitionSpec = { spring(dampingRatio = 0.88f, stiffness = 360f) },
             label = "search-height"
         ) { expanded -> if (expanded) 62.dp else 72.dp }
-        val tabsAlpha by transition.animateFloat(
-            transitionSpec = { spring(dampingRatio = 0.9f, stiffness = 500f) },
-            label = "tabs-alpha"
-        ) { expanded -> if (expanded) 0f else 1f }
 
         Row(
             Modifier.width(groupWidth),
             horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (tabsWidth >= 10.dp) {
-                LiquidBottomTabs(
-                    selectedTabIndex = selectedTab.coerceIn(0, navItems.lastIndex),
-                    onTabSelected = onTabSelected,
-                    backdrop = backdrop,
-                    tabsCount = navItems.size,
-                    modifier = Modifier.width(tabsWidth).height(72.dp).graphicsLayer { alpha = tabsAlpha }
-                ) {
-                    navItems.forEachIndexed { index, (icon, label) ->
-                        // Keep the original app's exact tab icons and labels.
-                        LiquidBottomTab(onClick = { onTabSelected(index) }) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = label,
-                                tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(26.dp)
-                            )
-                            Text(
-                                label,
-                                color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                maxLines = 1
-                            )
-                        }
-                    }
+            LiquidBottomTabs(
+                selectedTabIndex = selectedTab.coerceIn(0, navItems.lastIndex),
+                onTabSelected = onTabSelected,
+                backdrop = backdrop,
+                tabsCount = navItems.size,
+                modifier = Modifier.width(tabsWidth).height(tabsHeight),
+                collapseProgress = collapseProgress,
+                onCollapsedClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onSearchQueryChange("")
+                    onSearchExpandedChange(false)
+                },
+                collapsedContent = {
+                    Icon(
+                        imageVector = active.first,
+                        contentDescription = "Return to ${active.second}",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
                 }
-            } else {
-                Spacer(Modifier.width(tabsWidth).height(64.dp))
-            }
-
-            if (activeWidth >= 1.dp) {
-                GlassSurface(
-                    backdrop = backdrop,
-                    modifier = Modifier.width(activeWidth).height(activeWidth)
-                        .clip(CircleShape)
-                        .clickable {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            onSearchQueryChange("")
-                            onSearchExpandedChange(false)
-                        },
-                    cornerRadius = 50.dp,
-                    surfaceAlpha = 0.055f,
-                    navMaterial = true
-                ) {
-                    val activeIconAlpha by transition.animateFloat(
-                        transitionSpec = { tween(durationMillis = 150) },
-                        label = "active-icon-alpha"
-                    ) { expanded -> if (expanded) 1f else 0f }
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            ) {
+                navItems.forEachIndexed { index, (icon, label) ->
+                    LiquidBottomTab(onClick = { onTabSelected(index) }) {
                         Icon(
-                            imageVector = active.first,
-                            contentDescription = "Return to ${active.second}",
-                            tint = Color.White,
-                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = activeIconAlpha }
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
+                        )
+                        Text(
+                            label,
+                            color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            maxLines = 1,
+                            modifier = Modifier.graphicsLayer { alpha = 1f - collapseProgress }
                         )
                     }
                 }
-            } else {
-                Spacer(Modifier.width(activeWidth))
             }
 
             Spacer(Modifier.width(12.dp))
@@ -779,4 +761,3 @@ private fun BottomNavigation(
         }
     }
 }
-

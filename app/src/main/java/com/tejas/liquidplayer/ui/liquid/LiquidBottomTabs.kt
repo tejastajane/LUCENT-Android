@@ -8,6 +8,7 @@ import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -68,6 +69,9 @@ fun LiquidBottomTabs(
     backdrop: Backdrop,
     tabsCount: Int,
     modifier: Modifier = Modifier,
+    collapseProgress: Float = 0f,
+    onCollapsedClick: (() -> Unit)? = null,
+    collapsedContent: (@Composable () -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -82,9 +86,14 @@ fun LiquidBottomTabs(
         contentAlignment = Alignment.CenterStart
     ) {
         val density = LocalDensity.current
-        val tabWidth = with(density) {
-            (constraints.maxWidth.toFloat() - 8f.dp.toPx()) / tabsCount
+        val collapse = collapseProgress.coerceIn(0f, 1f)
+        val contentWidthPx = constraints.maxWidth.toFloat() - with(density) { 8.dp.toPx() }
+        val tabWidth = contentWidthPx / tabsCount
+        val selectedPillWidth = with(density) {
+            lerp(tabWidth, contentWidthPx, collapse).toDp()
         }
+        val containerHeight = lerp(72f, 62f, collapse).dp
+        val selectedPillHeight = lerp(64f, 54f, collapse).dp
 
         val offsetAnimation = remember { Animatable(0f) }
         val panelOffset by remember(density) {
@@ -181,7 +190,7 @@ fun LiquidBottomTabs(
                     onDrawSurface = { drawRect(containerColor) }
                 )
                 .then(interactiveHighlight.modifier)
-                .height(72f.dp)
+                .height(containerHeight)
                 .fillMaxWidth()
                 .padding(4f.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -220,7 +229,7 @@ fun LiquidBottomTabs(
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight.modifier)
-                    .height(64f.dp)
+                    .height(selectedPillHeight)
                     .fillMaxWidth()
                     .padding(horizontal = 4f.dp)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
@@ -233,9 +242,11 @@ fun LiquidBottomTabs(
             Modifier
                 .padding(horizontal = 4f.dp)
                 .graphicsLayer {
-                    translationX =
+                    val selectedPosition =
                         if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
                         else size.width - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
+                    // The selected tile returns to the leading edge as it expands into the active button.
+                    translationX = selectedPosition * (1f - collapse)
                 }
                 .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
@@ -291,8 +302,23 @@ fun LiquidBottomTabs(
                     }
                 )
                 .border(1f.dp, Color.White.copy(alpha = 0.19f), RoundedCornerShape(50.dp))
-                .height(64f.dp)
-                .fillMaxWidth(1f / tabsCount)
-        )
+                .height(selectedPillHeight)
+                .width(selectedPillWidth)
+        ) {
+            if (collapsedContent != null) {
+                Box(
+                    Modifier.fillMaxSize()
+                        .graphicsLayer { alpha = collapse }
+                        .then(
+                            if (collapse > 0.5f) Modifier.clickable {
+                                onCollapsedClick?.invoke()
+                            } else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    collapsedContent()
+                }
+            }
+        }
     }
 }
