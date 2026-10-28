@@ -28,14 +28,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          runs_json_query='.workflow_runs[] | [.id, .status, .created_at] | @tsv'
+          runs_json_query='.workflow_runs[] | [.id, .status, .created_at, .name, .conclusion] | @tsv'
           mapfile -t run_rows < <(
             gh api --paginate "repos/${REPOSITORY}/actions/runs?per_page=100" --jq "${runs_json_query}"
           )
 
           keep_completed_id="$(
             printf '%s\n' "${run_rows[@]}" |
-              awk -F '\t' '$2 == "completed" { print $1 "\t" $3 }' |
+              awk -F '\t' '$2 == "completed" && $4 == "Android build and playback test" && $5 != "cancelled" && $5 != "skipped" { print $1 "\t" $3 }' |
               sort -t $'\t' -k2,2r |
               head -n 1 |
               cut -f1
@@ -50,7 +50,18 @@ jobs:
           echo "All queued/in-progress runs will also be preserved."
 
           deleted=0
-          while IFS=$'\t' read -r run_id status created_at; do
+          while IFS=
+            [[ -n "${run_id}" ]] || continue
+            [[ "${status}" == "completed" ]] || continue
+            [[ "${run_id}" == "${keep_completed_id}" ]] && continue
+
+            echo "Deleting stale completed run ${run_id} (${created_at})"
+            gh api --silent --method DELETE "repos/${REPOSITORY}/actions/runs/${run_id}"
+            deleted=$((deleted + 1))
+          done < <(printf '%s\n' "${run_rows[@]}" | sort -t $'\t' -k3,3r)
+
+          echo "Cleanup finished. Deleted ${deleted} old completed workflow runs."
+\t' read -r run_id status created_at workflow_name conclusion; do
             [[ -n "${run_id}" ]] || continue
             [[ "${status}" == "completed" ]] || continue
             [[ "${run_id}" == "${keep_completed_id}" ]] && continue
