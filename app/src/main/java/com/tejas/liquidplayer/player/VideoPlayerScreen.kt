@@ -11,17 +11,25 @@ import android.os.SystemClock
 import kotlin.math.roundToInt
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.util.Rational
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +52,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
@@ -88,6 +99,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -102,7 +114,9 @@ import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.GlassSurface
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import org.videolan.libvlc.MediaPlayer
@@ -117,7 +131,8 @@ fun VideoPlayerScreen(
     onSelectVideo: (VideoItem) -> Unit,
     onClose: () -> Unit,
     hardwareAcceleration: Boolean,
-    gesturesEnabled: Boolean
+    gesturesEnabled: Boolean,
+    isInPictureInPictureMode: Boolean
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -154,6 +169,13 @@ fun VideoPlayerScreen(
     var speed by remember(video.uri) { mutableFloatStateOf(1f) }
     var volume by remember(controller, video.uri) { mutableIntStateOf(runCatching { controller.player.volume }.getOrDefault(100).coerceIn(0, 200)) }
     var verticalGestureZone by remember { mutableIntStateOf(0) }
+    var controlsInteractionToken by remember { mutableIntStateOf(0) }
+    var adjustmentMode by remember { mutableIntStateOf(0) }
+    var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
+    var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
+    var showAspectRatioFeedback by remember { mutableStateOf(false) }
+    var subtitleDelayUs by remember(video.uri) { mutableLongStateOf(0L) }
+    val aspectRatios = remember { listOf("Original" to null, "16:9" to "16:9", "4:3" to "4:3", "1:1" to "1:1", "21:9" to "21:9", "2.35:1" to "2.35:1") }
 
     val persistProgress = remember(video.uri, controller, playerPreferences) {
         {
@@ -164,6 +186,40 @@ fun VideoPlayerScreen(
         }
     }
 
+    BackHandler(enabled = !isInPictureInPictureMode) {
+        if (panel != PlayerPanel.None) panel = PlayerPanel.None else { persistProgress(); onClose() }
+    }
+    LaunchedEffect(controlsVisible, panel, controlsInteractionToken, isInPictureInPictureMode) {
+        if (controlsVisible && panel == PlayerPanel.None && !isInPictureInPictureMode) {
+            delay(4_000L)
+            controlsVisible = false
+        }
+    }
+    LaunchedEffect(adjustmentMode, brightness, volume) {
+        if (adjustmentMode != 0) { delay(900L); adjustmentMode = 0 }
+    }
+    LaunchedEffect(showAspectRatioFeedback) {
+        if (showAspectRatioFeedback) { delay(1_200L); showAspectRatioFeedback = false }
+    }
+    LaunchedEffect(video.uri, activity) {
+        val dimensions = withContext(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, video.uri)
+                val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                if (w > 0 && h > 0) if (rotation == 90 || rotation == 270) h to w else w to h else null
+            } catch (_: Exception) { null } finally { runCatching { retriever.release() } }
+        }
+        if (dimensions != null) {
+            val (w, h) = dimensions
+            videoAspectRatio = w.toFloat() / h.toFloat()
+            if (activity != null && !isInPictureInPictureMode) {
+                activity.requestedOrientation = if (h > w) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+        }
+    }
     val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             runCatching {
@@ -180,7 +236,6 @@ fun VideoPlayerScreen(
         val windowController = activity?.let {
             WindowInsetsControllerCompat(it.window, it.window.decorView)
         }
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         windowController?.hide(WindowInsetsCompat.Type.systemBars())
         val originalBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
         onDispose {
@@ -279,17 +334,21 @@ fun VideoPlayerScreen(
         if (panel == PlayerPanel.Audio || panel == PlayerPanel.Subtitles) {
             // libVLC populates track descriptions asynchronously after opening. Keep the
             // chooser synchronized while open rather than taking a single early snapshot.
+            if (panel == PlayerPanel.Subtitles) subtitleDelayUs = controller.currentSubtitleDelayUs()
             while (isActive && (panel == PlayerPanel.Audio || panel == PlayerPanel.Subtitles)) {
                 audioTracks = controller.audioTracks()
                 subtitleTracks = controller.subtitleTracks()
                 selectedAudioTrackId = controller.currentAudioTrackId()
                 selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+                if (panel == PlayerPanel.Subtitles) subtitleDelayUs = controller.currentSubtitleDelayUs()
                 delay(300L)
             }
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(video.uri) {
+        awaitEachGesture { awaitFirstDown(pass = PointerEventPass.Initial); controlsInteractionToken++ }
+    }) {
         val frame = backdropFrame
         val frameRevision = backdropFrameVersion
         if (frame != null) {
@@ -390,6 +449,7 @@ fun VideoPlayerScreen(
                     detectTapGestures(
                         onTap = {
                             controlsVisible = !controlsVisible
+                            controlsInteractionToken++
                             if (!controlsVisible) panel = PlayerPanel.None
                         },
                         onDoubleTap = if (gesturesEnabled) { offset ->
@@ -408,14 +468,18 @@ fun VideoPlayerScreen(
                         detectVerticalDragGestures(
                             onDragStart = { start ->
                                 verticalGestureZone = when {
-                                    start.x < size.width * 0.40f -> -1 // left side: brightness
-                                    start.x > size.width * 0.60f -> 1 // right side: volume
+                                    start.x < size.width * 0.40f -> -1
+                                    start.x > size.width * 0.60f -> 1
                                     else -> 0
                                 }
+                                adjustmentMode = verticalGestureZone
+                                controlsInteractionToken++
                             },
                             onVerticalDrag = { change, dragAmount ->
+                                controlsInteractionToken++
                                 when (verticalGestureZone) {
                                     -1 -> {
+                                        adjustmentMode = -1
                                         brightness = (brightness - dragAmount / size.height * 1.4f).coerceIn(0.05f, 1f)
                                         activity?.window?.let { window ->
                                             val params = window.attributes
@@ -424,6 +488,7 @@ fun VideoPlayerScreen(
                                         }
                                     }
                                     1 -> {
+                                        adjustmentMode = 1
                                         volume = (volume - (dragAmount / size.height * 220f).roundToInt()).coerceIn(0, 200)
                                         runCatching { controller.player.volume = volume }
                                     }
@@ -435,7 +500,24 @@ fun VideoPlayerScreen(
                 }
         )
 
-        if (controlsVisible) {
+
+        if (adjustmentMode != 0 && !isInPictureInPictureMode) {
+            Box(Modifier.align(if (adjustmentMode < 0) Alignment.CenterStart else Alignment.CenterEnd).padding(start = if (adjustmentMode < 0) 28.dp else 0.dp, end = if (adjustmentMode > 0) 28.dp else 0.dp)) {
+                AdjustmentIndicator(
+                    icon = if (adjustmentMode < 0) Icons.Default.Brightness6 else Icons.Default.VolumeUp,
+                    value = if (adjustmentMode < 0) "${(brightness * 100).toInt()}%" else "${(volume / 2).coerceIn(0, 100)}%",
+                    level = if (adjustmentMode < 0) brightness else (volume / 200f),
+                    label = if (adjustmentMode < 0) "Brightness" else "Volume"
+                )
+            }
+        }
+        if (showAspectRatioFeedback && !isInPictureInPictureMode) {
+            Box(Modifier.align(Alignment.Center)) {
+                Text("Aspect ratio · ${aspectRatios[selectedAspectIndex].first}", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(Color.Black.copy(alpha = 0.78f)).padding(horizontal = 18.dp, vertical = 10.dp))
+            }
+        }
+
+        if (controlsVisible && !isInPictureInPictureMode) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassIconButton(backdrop, Icons.Default.ArrowBack, "Back", onClick = { persistProgress(); onClose() })
@@ -457,6 +539,7 @@ fun VideoPlayerScreen(
                         onValueChange = { fraction ->
                             val target = (durationMs * fraction).toLong()
                             positionMs = target
+                            controlsInteractionToken++
                             controller.seekTo(target)
                         },
                         modifier = Modifier.weight(1f).padding(horizontal = 10.dp).height(24.dp),
@@ -497,12 +580,25 @@ fun VideoPlayerScreen(
                         }
                     )
                     Spacer(Modifier.weight(1f))
-                    GlassIconButton(backdrop, Icons.Default.AspectRatio, "Aspect ratio", onClick = { panel = togglePanel(panel, PlayerPanel.AspectRatio) })
+                    GlassIconButton(backdrop, Icons.Default.AspectRatio, "Aspect ratio", onClick = {
+                        selectedAspectIndex = (selectedAspectIndex + 1) % aspectRatios.size
+                        controller.setAspectRatio(aspectRatios[selectedAspectIndex].second)
+                        showAspectRatioFeedback = true
+                    }, onLongClick = { panel = PlayerPanel.AspectRatio })
+                    Spacer(Modifier.width(4.dp))
+                    GlassIconButton(backdrop, Icons.Default.PictureInPictureAlt, "Picture-in-picture", onClick = {
+                        persistProgress()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null &&
+                            context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                            val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
+                            runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)).build()) }
+                        }
+                    })
                 }
             }
         }
 
-        if (panel != PlayerPanel.None) {
+        if (panel != PlayerPanel.None && !isInPictureInPictureMode) {
             Box(
                 Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.20f)).clickable(
                     indication = null,
@@ -577,15 +673,24 @@ fun VideoPlayerScreen(
                                         trackSelectionMessage = if (success) "Subtitles disabled" else "VLC could not disable subtitles."
                                     }
                                 )
+                                Spacer(Modifier.height(14.dp))
+                                Text("Subtitle delay", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                                Text("Positive values show subtitles later; negative values show them earlier.", style = MaterialTheme.typography.bodySmall, color = Color.LightGray, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(onClick = { val next = (subtitleDelayUs - 50_000L).coerceAtLeast(-10_000_000L); if (controller.setSubtitleDelayUs(next)) subtitleDelayUs = next }) { Text("−50 ms", color = Color.White) }
+                                    Text("%+.0f ms".format(subtitleDelayUs / 1000.0), modifier = Modifier.weight(1f), color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    TextButton(onClick = { val next = (subtitleDelayUs + 50_000L).coerceAtMost(10_000_000L); if (controller.setSubtitleDelayUs(next)) subtitleDelayUs = next }) { Text("+50 ms", color = Color.White) }
+                                }
                             }
                             PlayerPanel.Tools -> ToolsPanel(
-                                onAspectRatio = { panel = PlayerPanel.AspectRatio },
                                 onAudio = { panel = PlayerPanel.Audio },
                                 onSubtitles = { panel = PlayerPanel.Subtitles },
                                 onSpeed = { panel = PlayerPanel.Speed }
                             )
                             PlayerPanel.AspectRatio -> AspectRatioPanel { label, ratio ->
+                                selectedAspectIndex = aspectRatios.indexOfFirst { it.first == label }.coerceAtLeast(0)
                                 controller.setAspectRatio(ratio)
+                                showAspectRatioFeedback = true
                                 panel = PlayerPanel.None
                             }
                             PlayerPanel.Speed -> {
@@ -644,14 +749,12 @@ private fun TrackPanel(
 
 @Composable
 private fun ToolsPanel(
-    onAspectRatio: () -> Unit,
     onAudio: () -> Unit,
     onSubtitles: () -> Unit,
     onSpeed: () -> Unit
 ) {
     val tools = listOf(
         Triple(Icons.Default.PlaylistAdd, "Playing queue", onSpeed),
-        Triple(Icons.Default.AspectRatio, "Aspect ratio", onAspectRatio),
         Triple(Icons.Default.Bookmark, "Bookmark", {}),
         Triple(Icons.Default.Audiotrack, "Audio tracks", onAudio),
         Triple(Icons.Default.ClosedCaption, "Subtitles", onSubtitles),
@@ -697,6 +800,17 @@ private fun AspectRatioPanel(onSelect: (String, String?) -> Unit) {
             }
         }
         Text("Ratios are applied by libVLC. Original restores the source aspect ratio.", color = Color.Gray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
+    }
+}
+
+@Composable
+private fun AdjustmentIndicator(icon: ImageVector, value: String, level: Float, label: String) {
+    Column(Modifier.width(72.dp).clip(RoundedCornerShape(28.dp)).background(Color.Black.copy(alpha = 0.78f)).padding(horizontal = 14.dp, vertical = 15.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, label, tint = Color.White, modifier = Modifier.size(23.dp))
+        Text(value, color = Color.White, style = MaterialTheme.typography.labelMedium)
+        Box(Modifier.width(5.dp).height(80.dp).clip(RoundedCornerShape(50.dp)).background(Color.White.copy(alpha = 0.24f)), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxWidth().fillMaxHeight(level.coerceIn(0.02f, 1f)).clip(RoundedCornerShape(50.dp)).background(Color.White))
+        }
     }
 }
 
