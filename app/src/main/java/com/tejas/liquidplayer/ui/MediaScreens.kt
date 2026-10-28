@@ -196,16 +196,12 @@ fun MainLibraryUi(
             val item = recentVideo
             if (item != null) GlassSurface(
                 backdrop = backdrop,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50.dp))
-                    .clickable { onPlay(item) },
+                // The backdrop shape clips the surface itself; avoid an extra
+                // outer clip layer that can create a hairline at the lens boundary.
+                modifier = Modifier.clickable { onPlay(item) },
                 cornerRadius = 50.dp,
                 surfaceAlpha = 0.055f,
-                navMaterial = true,
-                // A continuous underlay prevents the refraction layer from showing a
-                // hairline of the scrolling page through the middle of the pill.
-                surfaceBaseAlpha = 1f,
-                surfaceBaseColor = if (isDarkTheme) Color(0xFF101010) else Color(0xFFECECEC)
+                navMaterial = true
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))

@@ -53,6 +53,13 @@ fun GlassSurface(
     } else {
         Color(0xFF101010)
     }
+    // Use the same translucent fill as LiquidBottomTabs' inactive background, not
+    // a solid base. Keep the visual recipe identical across both glass controls.
+    val navbarInactiveMaterial = if (isLightSurface) {
+        Color.Black.copy(alpha = 0.04f)
+    } else {
+        Color.White.copy(alpha = 0.055f)
+    }
     val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier.drawBackdrop(
@@ -108,14 +115,17 @@ fun GlassSurface(
                 )
             },
             onDrawSurface = {
-                // Optional smoked base is painted inside the clipped pill shape, underneath
-                // the refraction. It prevents bright horizontal content from leaking through
-                // the middle of small playback pills while leaving the optical rim visible.
-                if (surfaceBaseAlpha > 0f) {
-                    drawRect(resolvedSurfaceBaseColor.copy(alpha = surfaceBaseAlpha.coerceIn(0f, 1f)))
+                if (navMaterial) {
+                    // Exactly the inactive-tab material: a low-alpha neutral wash over
+                    // the sampled backdrop, with no opaque underlay.
+                    drawRect(navbarInactiveMaterial)
+                } else {
+                    if (surfaceBaseAlpha > 0f) {
+                        drawRect(resolvedSurfaceBaseColor.copy(alpha = surfaceBaseAlpha.coerceIn(0f, 1f)))
+                    }
+                    drawRect(Color.White.copy(alpha = surfaceAlpha))
+                    drawRect(Color.Black.copy(alpha = 0.018f))
                 }
-                drawRect(Color.White.copy(alpha = surfaceAlpha))
-                drawRect(Color.Black.copy(alpha = 0.018f))
             }
         ),
         content = content
