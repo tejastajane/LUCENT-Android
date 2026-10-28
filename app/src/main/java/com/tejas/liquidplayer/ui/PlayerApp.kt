@@ -135,9 +135,18 @@ fun LiquidPlayerApp(
             )
         }
     } else {
-        val hasResumeHistory = lastPlayedVideo?.let {
-            preferences.getLong("playback_position_${it.uri.toString().hashCode()}", 0L) > 1_500L
-        } ?: false
+        // Resume only when the previous item has a meaningful, unfinished position.
+        // Otherwise the pill must play the newest available library video.
+        val resumableVideo = lastPlayedVideo?.takeIf { item ->
+            val savedPosition = preferences.getLong(
+                "playback_position_${item.uri.toString().hashCode()}",
+                0L
+            )
+            savedPosition > 1_500L &&
+                (item.durationMs <= 0L || savedPosition < item.durationMs - 1_500L)
+        }
+        val playTarget = resumableVideo ?: videos.maxByOrNull { it.dateAddedSeconds }
+        val hasResumeHistory = resumableVideo != null && playTarget?.uri == resumableVideo.uri
         MainLibraryUi(
             selectedTab = selectedTab,
             onTabSelected = { selectedTab = it },
@@ -155,7 +164,7 @@ fun LiquidPlayerApp(
                 mediaPermissionLauncher.launch(permissions)
             },
             onPlay = ::openVideo,
-            recentVideo = lastPlayedVideo ?: videos.maxByOrNull { it.dateAddedSeconds },
+            recentVideo = playTarget,
             hasResumeHistory = hasResumeHistory,
             onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
             hardwareAcceleration = hardwareAcceleration,
