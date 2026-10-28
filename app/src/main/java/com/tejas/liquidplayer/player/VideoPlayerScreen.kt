@@ -130,13 +130,12 @@ fun VideoPlayerScreen(
     playlist: List<VideoItem>,
     onSelectVideo: (VideoItem) -> Unit,
     onClose: () -> Unit,
-    hardwareAcceleration: Boolean,
+    controller: LibVlcController,
     gesturesEnabled: Boolean,
     isInPictureInPictureMode: Boolean
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
-    val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
     val savedPositionMs = remember(video.uri, playerPreferences) { playerPreferences.getLong(progressKey, 0L) }
