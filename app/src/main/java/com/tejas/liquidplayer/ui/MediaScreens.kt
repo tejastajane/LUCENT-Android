@@ -194,12 +194,15 @@ fun MainLibraryUi(
             val item = recentVideo
             if (item != null) GlassSurface(
                 backdrop = backdrop,
-                modifier = Modifier.clip(RoundedCornerShape(50.dp)).clickable { onPlay(item) },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color.Black.copy(alpha = 0.34f), RoundedCornerShape(50.dp))
+                    .clickable { onPlay(item) },
                 cornerRadius = 50.dp,
                 surfaceAlpha = 0.055f,
                 navMaterial = true
             ) {
-                Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
                     Text(if (hasResumeHistory) "Resume" else "Play", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onBackground)
                 }
@@ -619,11 +622,11 @@ private fun BottomNavigation(
         val activeWidth by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.82f, stiffness = 500f) },
             label = "active-tab-width"
-        ) { expanded -> if (expanded) 40.dp else 0.dp }
+        ) { expanded -> if (expanded) 62.dp else 0.dp }
         val searchWidth by transition.animateDp(
             transitionSpec = { spring(dampingRatio = 0.84f, stiffness = 440f) },
             label = "search-width"
-        ) { expanded -> if (expanded) maxWidth * 0.69f + 22.dp else 62.dp }
+        ) { expanded -> if (expanded) maxWidth * 0.69f else 62.dp }
         val tabsAlpha by transition.animateFloat(
             transitionSpec = { spring(dampingRatio = 0.9f, stiffness = 500f) },
             label = "tabs-alpha"
@@ -640,7 +643,7 @@ private fun BottomNavigation(
                     onTabSelected = onTabSelected,
                     backdrop = backdrop,
                     tabsCount = navItems.size,
-                    modifier = Modifier.width(tabsWidth).height(64.dp).graphicsLayer { alpha = tabsAlpha }
+                    modifier = Modifier.width(tabsWidth).height(72.dp).graphicsLayer { alpha = tabsAlpha }
                 ) {
                     navItems.forEachIndexed { index, (icon, label) ->
                         // Keep the original app's exact tab icons and labels.
@@ -692,7 +695,7 @@ private fun BottomNavigation(
                                 imageVector = active.first,
                                 contentDescription = "Return to ${active.second}",
                                 tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
