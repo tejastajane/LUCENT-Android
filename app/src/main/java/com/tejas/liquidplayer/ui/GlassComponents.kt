@@ -41,6 +41,7 @@ fun GlassSurface(
     cornerRadius: Dp = 24.dp,
     surfaceAlpha: Float = 0.055f,
     navMaterial: Boolean = false,
+    surfaceBaseAlpha: Float = 0f,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
@@ -98,7 +99,12 @@ fun GlassSurface(
                 )
             },
             onDrawSurface = {
-                // Neutral clear material; optical highlights come from Backdrop itself.
+                // Optional smoked base is painted inside the clipped pill shape, underneath
+                // the refraction. It prevents bright horizontal content from leaking through
+                // the middle of small playback pills while leaving the optical rim visible.
+                if (surfaceBaseAlpha > 0f) {
+                    drawRect(Color.Black.copy(alpha = surfaceBaseAlpha.coerceIn(0f, 1f)))
+                }
                 drawRect(Color.White.copy(alpha = surfaceAlpha))
                 drawRect(Color.Black.copy(alpha = 0.018f))
             }
