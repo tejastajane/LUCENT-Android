@@ -6,7 +6,6 @@ import android.util.Size
 import android.view.HapticFeedbackConstants
 import android.os.Build
 import android.text.format.Formatter
-import android.util.Size
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -419,7 +418,6 @@ private fun SettingsScreen(
                     listOf(
                         ActionItem(Icons.Default.Audiotrack, "Audio tracks", "Choose an audio language while playing", {}),
                         ActionItem(Icons.Default.ClosedCaption, "Subtitles", "Embedded and external subtitle tracks", {}),
-                        ActionItem(Icons.Default.Storage, "Internal storage", "Browse device folders from the Browse tab", {})
                     )
                 )
             }
