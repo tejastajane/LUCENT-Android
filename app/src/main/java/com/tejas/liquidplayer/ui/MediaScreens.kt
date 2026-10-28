@@ -187,7 +187,7 @@ fun MainLibraryUi(
         }
         AnimatedVisibility(
             visible = recentVideo != null && showRecentPlayState.value && !searchExpanded,
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 78.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 108.dp),
             enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { it * 2 },
             exit = fadeOut(tween(130)) + slideOutVertically(tween(180)) { it * 3 }
         ) {
@@ -196,11 +196,11 @@ fun MainLibraryUi(
                 backdrop = backdrop,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50.dp))
-                    .background(Color.Black.copy(alpha = 0.34f), RoundedCornerShape(50.dp))
                     .clickable { onPlay(item) },
                 cornerRadius = 50.dp,
                 surfaceAlpha = 0.055f,
-                navMaterial = true
+                navMaterial = true,
+                surfaceBaseAlpha = 0.68f
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
@@ -656,7 +656,7 @@ private fun BottomNavigation(
                                 imageVector = icon,
                                 contentDescription = label,
                                 tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(26.dp)
                             )
                             Text(
                                 label,
@@ -685,23 +685,17 @@ private fun BottomNavigation(
                     surfaceAlpha = 0.055f,
                     navMaterial = true
                 ) {
-                    AnimatedContent(
-                        targetState = searchExpanded,
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                        transitionSpec = {
-                            fadeIn(tween(180)) togetherWith fadeOut(tween(110))
-                        },
-                        label = "active-tab-icon"
-                    ) { showActive ->
-                        if (showActive) {
-                            Icon(
-                                imageVector = active.first,
-                                contentDescription = "Return to ${active.second}",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
+                    val activeIconAlpha by transition.animateFloat(
+                        transitionSpec = { tween(durationMillis = 150) },
+                        label = "active-icon-alpha"
+                    ) { expanded -> if (expanded) 1f else 0f }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = active.first,
+                            contentDescription = "Return to ${active.second}",
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = activeIconAlpha }
+                        )
                     }
                 }
             } else {
