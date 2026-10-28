@@ -7,6 +7,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -180,7 +181,7 @@ fun LiquidBottomTabs(
                     onDrawSurface = { drawRect(containerColor) }
                 )
                 .then(interactiveHighlight.modifier)
-                .height(64f.dp)
+                .height(72f.dp)
                 .fillMaxWidth()
                 .padding(4f.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -219,7 +220,7 @@ fun LiquidBottomTabs(
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight.modifier)
-                    .height(56f.dp)
+                    .height(64f.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 4f.dp)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
@@ -251,17 +252,23 @@ fun LiquidBottomTabs(
                     },
                     highlight = {
                         val progress = dampedDragAnimation.pressProgress
-                        Highlight.Default.copy(alpha = progress)
+                        // Keep a subtle premium rim visible while idle, then lift on press.
+                        Highlight.Default.copy(alpha = 0.45f + 0.45f * progress)
                     },
                     shadow = {
                         val progress = dampedDragAnimation.pressProgress
-                        Shadow(alpha = progress)
+                        Shadow(
+                            radius = 10f.dp,
+                            offset = androidx.compose.ui.unit.DpOffset(0f.dp, 2f.dp),
+                            color = Color.Black.copy(alpha = 0.42f),
+                            alpha = 0.55f + 0.35f * progress
+                        )
                     },
                     innerShadow = {
                         val progress = dampedDragAnimation.pressProgress
                         InnerShadow(
-                            radius = 8f.dp * progress,
-                            alpha = progress
+                            radius = (4f + 4f * progress).dp,
+                            alpha = 0.45f + 0.45f * progress
                         )
                     },
                     layerBlock = {
@@ -274,14 +281,17 @@ fun LiquidBottomTabs(
                     onDrawSurface = {
                         val progress = dampedDragAnimation.pressProgress
                         drawRect(
-                            if (isLightTheme) Color.Black.copy(0.1f)
-                            else Color.White.copy(0.1f),
+                            // A slightly smoked-neutral selector: not a bright white tile.
+                            if (isLightTheme) Color.Black.copy(alpha = 0.12f)
+                            else Color.Black.copy(alpha = 0.18f),
                             alpha = 1f - progress
                         )
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                        drawRect(Color.White.copy(alpha = 0.035f + 0.025f * progress))
+                        drawRect(Color.Black.copy(alpha = 0.035f * progress))
                     }
                 )
-                .height(56f.dp)
+                .border(1f.dp, Color.White.copy(alpha = 0.19f), RoundedCornerShape(50f))
+                .height(64f.dp)
                 .fillMaxWidth(1f / tabsCount)
         )
     }
