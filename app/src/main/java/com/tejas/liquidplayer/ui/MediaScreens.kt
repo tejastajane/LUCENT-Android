@@ -97,6 +97,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -201,7 +202,10 @@ fun MainLibraryUi(
                 cornerRadius = 50.dp,
                 surfaceAlpha = 0.055f,
                 navMaterial = true,
-                surfaceBaseAlpha = 0.68f
+                // A continuous underlay prevents the refraction layer from showing a
+                // hairline of the scrolling page through the middle of the pill.
+                surfaceBaseAlpha = 1f,
+                surfaceBaseColor = if (isDarkTheme) Color(0xFF101010) else Color(0xFFECECEC)
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
@@ -607,6 +611,10 @@ private fun BottomNavigation(
         Icons.Default.Settings to "Settings"
     )
     val active = navItems[selectedTab.coerceIn(0, navItems.lastIndex)]
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val activeIconColor = if (isLightTheme) Color(0xFF0A84FF) else Color.White
+    val activeLabelColor = if (isLightTheme) Color(0xFF1D1D1F) else Color.White
+    val inactiveIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -658,7 +666,7 @@ private fun BottomNavigation(
                     Icon(
                         imageVector = active.first,
                         contentDescription = "Return to ${active.second}",
-                        tint = Color.White,
+                        tint = activeIconColor,
                         modifier = Modifier.size(26.dp)
                     )
                 }
@@ -668,12 +676,12 @@ private fun BottomNavigation(
                         Icon(
                             imageVector = icon,
                             contentDescription = label,
-                            tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (selectedTab == index) activeIconColor else inactiveIconColor,
                             modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
                         )
                         Text(
                             label,
-                            color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (selectedTab == index) activeLabelColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             maxLines = 1,
                             modifier = Modifier.graphicsLayer { alpha = 1f - collapseProgress }
@@ -716,7 +724,7 @@ private fun BottomNavigation(
                 ) { expanded ->
                     if (!expanded) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Search, contentDescription = "Search library", tint = Color.White, modifier = Modifier.size(26.dp))
+                            Icon(Icons.Default.Search, contentDescription = "Search library", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(26.dp))
                         }
                     } else {
                         Row(
@@ -728,19 +736,19 @@ private fun BottomNavigation(
                                 onSearchQueryChange("")
                                 onSearchExpandedChange(false)
                             }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = Color.White)
+                                Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = MaterialTheme.colorScheme.onBackground)
                             }
                             BasicTextField(
                                 value = searchQuery,
                                 onValueChange = onSearchQueryChange,
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                                cursorBrush = SolidColor(Color.White),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.onBackground),
                                 decorationBox = { inner ->
                                     Box {
                                         if (searchQuery.isEmpty()) {
-                                            Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
+                                            Text("Search library…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
                                         }
                                         inner()
                                     }
@@ -751,7 +759,7 @@ private fun BottomNavigation(
                                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                     onSearchQueryChange("")
                                 }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray)
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = MaterialTheme.colorScheme.onBackground)
                                 }
                             }
                         }

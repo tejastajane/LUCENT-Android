@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.ColorFilter
@@ -77,8 +78,8 @@ fun LiquidBottomTabs(
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    // Neutral clear-glass design: strictly white/grey highlights, no blue accent or tint.
-    val accentColor = Color.White
+    // Preserve the library's blue active SVG in light theme; dark theme stays neutral white.
+    val accentColor = if (isLightTheme) Color(0xFF0A84FF) else Color.White
     val containerColor = if (isLightTheme) Color.Black.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.055f)
 
     val tabsBackdrop = rememberLayerBackdrop()
@@ -294,14 +295,29 @@ fun LiquidBottomTabs(
                     },
                     onDrawSurface = {
                         val progress = dampedDragAnimation.pressProgress
-                        drawRect(
-                            // A slightly smoked-neutral selector: not a bright white tile.
-                            if (isLightTheme) Color.Black.copy(alpha = 0.12f)
-                            else Color.Black.copy(alpha = 0.18f),
-                            alpha = 1f - progress
-                        )
-                        drawRect(Color.White.copy(alpha = 0.035f + 0.025f * progress))
-                        drawRect(Color.Black.copy(alpha = 0.035f * progress))
+                        if (isLightTheme) {
+                            // Keep light mode clear and neutral; the blue is only on its active SVG.
+                            drawRect(Color.Black.copy(alpha = 0.12f))
+                            drawRect(Color.White.copy(alpha = 0.035f + 0.025f * progress))
+                            drawRect(Color.Black.copy(alpha = 0.035f * progress))
+                        } else {
+                            // Dark-only smoked drop: glossy upper edge, dark center, and a deep lower rim
+                            // matching the reference while leaving inactive tabs visibly greyer.
+                            drawRect(Color.Black.copy(alpha = 0.34f))
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.105f),
+                                        Color.White.copy(alpha = 0.035f),
+                                        Color.Black.copy(alpha = 0.075f),
+                                        Color.Black.copy(alpha = 0.19f)
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height
+                                )
+                            )
+                            drawRect(Color.Black.copy(alpha = 0.07f * progress))
+                        }
                     }
                 )
                 .border(1f.dp, Color.White.copy(alpha = 0.19f), RoundedCornerShape(50.dp))

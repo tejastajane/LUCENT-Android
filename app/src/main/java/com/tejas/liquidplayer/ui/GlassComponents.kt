@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -42,8 +43,15 @@ fun GlassSurface(
     surfaceAlpha: Float = 0.055f,
     navMaterial: Boolean = false,
     surfaceBaseAlpha: Float = 0f,
+    surfaceBaseColor: Color? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val isLightSurface = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val resolvedSurfaceBaseColor = surfaceBaseColor ?: if (isLightSurface) {
+        Color(0xFFECECEC)
+    } else {
+        Color(0xFF101010)
+    }
     val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier.drawBackdrop(
@@ -103,7 +111,7 @@ fun GlassSurface(
                 // the refraction. It prevents bright horizontal content from leaking through
                 // the middle of small playback pills while leaving the optical rim visible.
                 if (surfaceBaseAlpha > 0f) {
-                    drawRect(Color.Black.copy(alpha = surfaceBaseAlpha.coerceIn(0f, 1f)))
+                    drawRect(resolvedSurfaceBaseColor.copy(alpha = surfaceBaseAlpha.coerceIn(0f, 1f)))
                 }
                 drawRect(Color.White.copy(alpha = surfaceAlpha))
                 drawRect(Color.Black.copy(alpha = 0.018f))
