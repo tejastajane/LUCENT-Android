@@ -23,9 +23,14 @@ import java.util.concurrent.atomic.AtomicInteger
 class LibVlcPlaybackSmokeTest {
     @Test
     fun mediaStoreContentUriOpensAndPlaybackTimeAdvances() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
         val fixture = File(context.cacheDir, "liquidplayer-smoke.mp4")
-        assertTrue("Smoke-test MP4 wasn't copied into app cache", fixture.exists() && fixture.length() > 0L)
+        // Fixture ships inside the test APK; no pre-installing the target app is required.
+        instrumentation.context.assets.open("liquidplayer-smoke.mp4").use { input ->
+            fixture.outputStream().buffered().use { output -> input.copyTo(output) }
+        }
+        assertTrue("Smoke-test MP4 asset wasn't copied into app cache", fixture.exists() && fixture.length() > 0L)
 
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "liquidplayer-smoke.mp4")
@@ -90,6 +95,7 @@ class LibVlcPlaybackSmokeTest {
             scenario.onActivity { controller?.close() }
             scenario.close()
             context.contentResolver.delete(contentUri, null, null)
+            fixture.delete()
         }
     }
 }
