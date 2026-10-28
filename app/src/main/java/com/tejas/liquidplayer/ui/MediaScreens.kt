@@ -100,6 +100,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -190,7 +191,8 @@ fun MainLibraryUi(
                 backdrop = backdrop,
                 modifier = Modifier.clip(RoundedCornerShape(50.dp)).clickable { onPlay(item) },
                 cornerRadius = 50.dp,
-                surfaceAlpha = 0.13f
+                surfaceAlpha = 0.055f,
+                navMaterial = true
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
@@ -580,7 +582,7 @@ private fun EmptyState(
 
 @Composable
 private fun BottomNavigation(
-    backdrop: LayerBackdrop,
+    backdrop: Backdrop,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     searchExpanded: Boolean,
@@ -590,64 +592,142 @@ private fun BottomNavigation(
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
-    val navItems = listOf(Icons.Default.Movie to "Videos", Icons.Default.Folder to "Folders", Icons.Default.Settings to "Settings")
-    val active = navItems[selectedTab.coerceIn(0, 2)]
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (!searchExpanded) {
-            LiquidBottomTabs(
-                selectedTabIndex = selectedTab.coerceIn(0, 2),
-                onTabSelected = onTabSelected,
-                backdrop = backdrop,
-                tabsCount = navItems.size,
-                modifier = Modifier.weight(1f).height(64.dp)
+    val navItems = listOf(
+        Icons.Default.Movie to "Videos",
+        Icons.Default.Folder to "Folders",
+        Icons.Default.Settings to "Settings"
+    )
+    val active = navItems[selectedTab.coerceIn(0, navItems.lastIndex)]
+
+    AnimatedContent(
+        targetState = searchExpanded,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        transitionSpec = {
+            if (targetState) {
+                (fadeIn(tween(190, delayMillis = 60)) + slideInHorizontally(tween(300)) { it / 10 }) togetherWith
+                    (fadeOut(tween(110)) + slideOutHorizontally(tween(210)) { -it / 12 })
+            } else {
+                (fadeIn(tween(190, delayMillis = 45)) + slideInHorizontally(tween(300)) { -it / 10 }) togetherWith
+                    (fadeOut(tween(110)) + slideOutHorizontally(tween(210)) { it / 12 })
+            }
+        },
+        label = "bottom-tabs-search-morph"
+    ) { expanded ->
+        if (!expanded) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                navItems.forEachIndexed { index, (icon, label) ->
-                    LiquidBottomTab(onClick = { onTabSelected(index) }) {
-                        Icon(icon, contentDescription = label, tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                        Text(label, color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), maxLines = 1)
+                LiquidBottomTabs(
+                    selectedTabIndex = selectedTab.coerceIn(0, navItems.lastIndex),
+                    onTabSelected = onTabSelected,
+                    backdrop = backdrop,
+                    tabsCount = navItems.size,
+                    modifier = Modifier.fillMaxWidth(0.69f).height(64.dp)
+                ) {
+                    navItems.forEachIndexed { index, (icon, label) ->
+                        LiquidBottomTab(onClick = { onTabSelected(index) }) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                tint = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                label,
+                                color = if (selectedTab == index) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
-            }
-            GlassSurface(
-                backdrop = backdrop,
-                modifier = Modifier.size(62.dp).clip(CircleShape).clickable {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    onSearchExpandedChange(true)
-                },
-                cornerRadius = 50.dp,
-                surfaceAlpha = 0.085f
-            ) {
-                Icon(Icons.Default.Search, contentDescription = "Search library", tint = Color.White, modifier = Modifier.align(Alignment.Center).size(26.dp))
+                GlassSurface(
+                    backdrop = backdrop,
+                    modifier = Modifier.size(62.dp).clip(CircleShape).clickable {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onSearchExpandedChange(true)
+                    },
+                    cornerRadius = 50.dp,
+                    surfaceAlpha = 0.055f,
+                    navMaterial = true
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Search library",
+                        tint = Color.White,
+                        modifier = Modifier.align(Alignment.Center).size(26.dp)
+                    )
+                }
             }
         } else {
-            GlassSurface(backdrop, Modifier.size(62.dp).clip(CircleShape), cornerRadius = 50.dp, surfaceAlpha = 0.085f) {
-                Icon(active.first, contentDescription = active.second, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(25.dp))
-            }
-            GlassSurface(backdrop, Modifier.weight(1f).height(62.dp), cornerRadius = 50.dp, surfaceAlpha = 0.11f) {
-                Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GlassSurface(
+                    backdrop = backdrop,
+                    modifier = Modifier.size(62.dp).clip(CircleShape).clickable {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         onSearchQueryChange("")
                         onSearchExpandedChange(false)
-                    }) { Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = Color.White) }
-                    BasicTextField(
-                        value = searchQuery,
-                        onValueChange = onSearchQueryChange,
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                        cursorBrush = SolidColor(Color.White),
-                        decorationBox = { inner ->
-                            Box {
-                                if (searchQuery.isEmpty()) Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
-                                inner()
+                    },
+                    cornerRadius = 50.dp,
+                    surfaceAlpha = 0.055f,
+                    navMaterial = true
+                ) {
+                    Icon(
+                        active.first,
+                        contentDescription = "Return to ${active.second}",
+                        tint = Color.White,
+                        modifier = Modifier.align(Alignment.Center).size(25.dp)
+                    )
+                }
+                GlassSurface(
+                    backdrop = backdrop,
+                    modifier = Modifier.weight(1f).height(62.dp),
+                    cornerRadius = 50.dp,
+                    surfaceAlpha = 0.055f,
+                    navMaterial = true
+                ) {
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onSearchQueryChange("")
+                            onSearchExpandedChange(false)
+                        }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Collapse search", tint = Color.White)
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                            cursorBrush = SolidColor(Color.White),
+                            decorationBox = { inner ->
+                                Box {
+                                    if (searchQuery.isEmpty()) {
+                                        Text("Search library…", color = Color.LightGray, style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                    inner()
+                                }
+                            }
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                onSearchQueryChange("")
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray)
                             }
                         }
-                    )
-                    if (searchQuery.isNotEmpty()) IconButton(onClick = {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        onSearchQueryChange("")
-                    }) { Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray) }
+                    }
                 }
             }
         }
