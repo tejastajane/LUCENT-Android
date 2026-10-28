@@ -207,6 +207,9 @@ fun LiquidPlayerApp(isDarkTheme: Boolean, onThemeChanged: (Boolean) -> Unit) {
                 },
                 onPlay = ::openVideo,
                 recentVideo = lastPlayedVideo ?: videos.maxByOrNull { it.dateAddedSeconds },
+                hasResumeHistory = lastPlayedVideo?.let {
+                    preferences.getLong("playback_position_${it.uri.toString().hashCode()}", 0L) > 1_500L
+                } ?: false,
                 onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
                 hardwareAcceleration = hardwareAcceleration,
                 onHardwareAccelerationChanged = { hardwareAcceleration = it; preferences.edit().putBoolean("hardware_acceleration", it).apply() },
