@@ -71,18 +71,20 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
                         val descriptor = pendingDescriptor
                             ?: error("Android returned no file descriptor for this video.")
                         contentDescriptor = descriptor
-                        pendingDescriptor = null
                         Media(libVlc, descriptor.fileDescriptor)
                     }
                     "file" -> Media(libVlc, uri.path ?: error("The video file path is empty."))
                     else -> Media(libVlc, uri)
                 }
                 player.play(media)
+                pendingDescriptor = null
                 null
             }
         } catch (error: Exception) {
             runCatching { pendingDescriptor?.close() }
-            if (contentDescriptor === pendingDescriptor) contentDescriptor = null
+            if (pendingDescriptor != null && contentDescriptor === pendingDescriptor) {
+                contentDescriptor = null
+            }
             Log.e("LiquidPlayer/VLC", "Unable to start media: $uri", error)
             "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
         }
