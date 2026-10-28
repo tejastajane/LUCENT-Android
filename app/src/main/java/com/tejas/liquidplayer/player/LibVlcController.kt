@@ -42,49 +42,30 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         }
     }
 
-    /**
-     * Opens content-provider descriptors off the main thread, then queues playback on main.
-     * This avoids stalling the first frame while MediaStore/Documents providers respond.
-     */
-    suspend fun play(uri: Uri): String? {
+    /** Returns null if playback was queued, or an error message for synchronous access failures. */
+    fun play(uri: Uri): String? {
         if (released) return "The player has already been closed."
-        var pendingDescriptor: ParcelFileDescriptor? = null
         return try {
-            if (uri.scheme?.lowercase() == "content") {
-                pendingDescriptor = withContext(Dispatchers.IO) {
-                    appContext.contentResolver.openFileDescriptor(uri, "r")
+            runCatching { player.stop() }
+            contentDescriptor?.close()
+            contentDescriptor = null
+            cachedPlaybackFile?.delete()
+            cachedPlaybackFile = null
+            val media = when (uri.scheme?.lowercase()) {
+                "content" -> {
+                    val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r")
                         ?: error("Android returned no file descriptor for this video.")
+                    contentDescriptor = descriptor
+                    Media(libVlc, descriptor.fileDescriptor)
                 }
+                "file" -> Media(libVlc, uri.path ?: error("The video file path is empty."))
+                else -> Media(libVlc, uri)
             }
-            withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                if (released) {
-                    pendingDescriptor?.close()
-                    return@withContext "The player has already been closed."
-                }
-                runCatching { player.stop() }
-                contentDescriptor?.close()
-                contentDescriptor = null
-                cachedPlaybackFile?.delete()
-                cachedPlaybackFile = null
-                val media = when (uri.scheme?.lowercase()) {
-                    "content" -> {
-                        val descriptor = pendingDescriptor
-                            ?: error("Android returned no file descriptor for this video.")
-                        contentDescriptor = descriptor
-                        Media(libVlc, descriptor.fileDescriptor)
-                    }
-                    "file" -> Media(libVlc, uri.path ?: error("The video file path is empty."))
-                    else -> Media(libVlc, uri)
-                }
-                player.play(media)
-                pendingDescriptor = null
-                null
-            }
+            player.play(media)
+            null
         } catch (error: Exception) {
-            runCatching { pendingDescriptor?.close() }
-            if (pendingDescriptor != null && contentDescriptor === pendingDescriptor) {
-                contentDescriptor = null
-            }
+            runCatching { contentDescriptor?.close() }
+            contentDescriptor = null
             Log.e("LiquidPlayer/VLC", "Unable to start media: $uri", error)
             "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
         }

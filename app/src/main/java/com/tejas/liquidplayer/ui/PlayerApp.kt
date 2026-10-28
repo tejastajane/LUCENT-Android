@@ -15,15 +15,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,7 +27,6 @@ import androidx.core.content.ContextCompat
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.VideoRepository
 import com.tejas.liquidplayer.player.VideoPlayerScreen
-import com.tejas.liquidplayer.player.LibVlcController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -55,8 +45,6 @@ fun LiquidPlayerApp(
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var playerController by remember { mutableStateOf<LibVlcController?>(null) }
-    var releaseControllerAfterPlayerExit by remember { mutableStateOf(false) }
     var lastPlayedVideo by remember(preferences) {
         mutableStateOf(preferences.getString("last_played_uri", null)?.let { savedUri ->
             VideoItem(
@@ -79,7 +67,6 @@ fun LiquidPlayerApp(
     }
 
     fun openVideo(item: VideoItem) {
-        releaseControllerAfterPlayerExit = false
         lastPlayedVideo = item
         selectedVideo = item
         preferences.edit()
@@ -135,34 +122,6 @@ fun LiquidPlayerApp(
         }
     }
 
-    // Warm up libVLC while the user browses, instead of blocking the first video tap.
-    // Keep this controller in app state and hand it to the player screen.
-    LaunchedEffect(hardwareAcceleration, playerController) {
-        if (playerController == null) {
-            val useHardwareAcceleration = hardwareAcceleration
-            val candidate = withContext(Dispatchers.IO) {
-                LibVlcController(context.applicationContext, useHardwareAcceleration)
-            }
-            if (playerController == null && hardwareAcceleration == useHardwareAcceleration) {
-                playerController = candidate
-            } else {
-                candidate.close()
-            }
-        }
-    }
-
-    // Wait for AnimatedContent to finish removing the player before its controller is
-    // released and rebuilt for the next play session.
-    LaunchedEffect(releaseControllerAfterPlayerExit) {
-        if (releaseControllerAfterPlayerExit) {
-            kotlinx.coroutines.delay(340L)
-            if (selectedVideo == null) {
-                playerController = null
-                releaseControllerAfterPlayerExit = false
-            }
-        }
-    }
-
     AnimatedContent(
         targetState = selectedVideo,
         transitionSpec = {
@@ -182,32 +141,15 @@ fun LiquidPlayerApp(
                 else listOf(activeVideo) + videos.filterNot { it.uri == activeVideo.uri }
             }
             LiquidPlayerTheme(darkTheme = true) {
-                val warmedController = playerController
-                if (warmedController != null) {
-                    VideoPlayerScreen(
-                        video = activeVideo,
-                        playlist = playbackQueue,
-                        onSelectVideo = ::openVideo,
-                        onClose = {
-                            releaseControllerAfterPlayerExit = true
-                            selectedVideo = null
-                        },
-                        controller = warmedController,
-                        gesturesEnabled = gesturesEnabled,
-                        isInPictureInPictureMode = isInPictureInPictureMode
-                    )
-                } else {
-                    Box(
-                        Modifier.fillMaxSize().background(Color.Black),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(34.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
-                }
+                VideoPlayerScreen(
+                    video = activeVideo,
+                    playlist = playbackQueue,
+                    onSelectVideo = ::openVideo,
+                    onClose = { selectedVideo = null },
+                    hardwareAcceleration = hardwareAcceleration,
+                    gesturesEnabled = gesturesEnabled,
+                    isInPictureInPictureMode = isInPictureInPictureMode
+                )
             }
         } else {
             val hasResumeHistory = lastPlayedVideo?.let {
@@ -235,11 +177,7 @@ fun LiquidPlayerApp(
                 onChooseVideoFile = { documentPicker.launch(arrayOf("video/*")) },
                 hardwareAcceleration = hardwareAcceleration,
                 onHardwareAccelerationChanged = {
-                    if (hardwareAcceleration != it) {
-                        hardwareAcceleration = it
-                        playerController?.close()
-                        playerController = null
-                    }
+                    hardwareAcceleration = it
                     preferences.edit().putBoolean("hardware_acceleration", it).apply()
                 },
                 gesturesEnabled = gesturesEnabled,
