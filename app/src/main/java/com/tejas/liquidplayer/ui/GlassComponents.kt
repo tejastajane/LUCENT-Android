@@ -1,5 +1,6 @@
 package com.tejas.liquidplayer.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -110,6 +111,18 @@ fun GlassSurface(
                     drawRect(Color.White.copy(alpha = surfaceAlpha))
                     drawRect(Color.Black.copy(alpha = 0.018f))
                 }
+            }
+        ).then(
+            if (flatNavMaterial) {
+                // Fine reflective rim for the Play/Resume pill only; keep the navbar untouched.
+                Modifier.border(
+                    width = 1.dp,
+                    color = if (isLightSurface) Color.Black.copy(alpha = 0.14f)
+                    else Color.White.copy(alpha = 0.18f),
+                    shape = shape
+                )
+            } else {
+                Modifier
             }
         ),
         content = content
