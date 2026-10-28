@@ -196,12 +196,12 @@ fun MainLibraryUi(
             val item = recentVideo
             if (item != null) GlassSurface(
                 backdrop = backdrop,
-                // The backdrop shape clips the surface itself; avoid an extra
-                // outer clip layer that can create a hairline at the lens boundary.
+                // Reuse the inactive navbar material: no opaque plate, extra bevel,
+                // or outer clip layer. drawBackdrop owns the pill shape and refraction.
                 modifier = Modifier.clickable { onPlay(item) },
                 cornerRadius = 50.dp,
-                surfaceAlpha = 0.055f,
-                navMaterial = true
+                navMaterial = true,
+                flatNavMaterial = true
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))

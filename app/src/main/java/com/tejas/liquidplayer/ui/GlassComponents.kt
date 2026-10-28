@@ -43,18 +43,11 @@ fun GlassSurface(
     cornerRadius: Dp = 24.dp,
     surfaceAlpha: Float = 0.055f,
     navMaterial: Boolean = false,
-    surfaceBaseAlpha: Float = 0f,
-    surfaceBaseColor: Color? = null,
+    flatNavMaterial: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
     val isLightSurface = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val resolvedSurfaceBaseColor = surfaceBaseColor ?: if (isLightSurface) {
-        Color(0xFFECECEC)
-    } else {
-        Color(0xFF101010)
-    }
-    // Use the same translucent fill as LiquidBottomTabs' inactive background, not
-    // a solid base. Keep the visual recipe identical across both glass controls.
+    // Same low-alpha surface paint as the inactive background in LiquidBottomTabs.
     val navbarInactiveMaterial = if (isLightSurface) {
         Color.Black.copy(alpha = 0.04f)
     } else {
@@ -66,13 +59,8 @@ fun GlassSurface(
             backdrop = backdrop,
             shape = { shape },
             effects = {
-                // Match Kyant0's GlassPlayground reset values: blur 0dp, height 0.2
-                // of half the element's minimum dimension, amount 0.2 of that dimension,
-                // and chromatic aberration off. The proportional lens scales naturally
-                // from small player buttons to larger panels.
                 vibrancy()
                 if (navMaterial) {
-                    // Match the LiquidBottomTabs' inactive frosted-glass material.
                     blur(8.dp.toPx())
                     lens(
                         refractionHeight = 24.dp.toPx(),
@@ -91,11 +79,11 @@ fun GlassSurface(
                 }
             },
             highlight = {
-                // The library's GlassPlayground uses a plain, neutral highlight.
+                // The inactive navbar surface itself has no additional bright bevel.
                 Highlight.Plain.copy(
                     width = 1.1.dp,
                     blurRadius = 1.25.dp,
-                    alpha = 0.9f
+                    alpha = if (flatNavMaterial) 0f else 0.9f
                 )
             },
             shadow = {
@@ -103,7 +91,7 @@ fun GlassSurface(
                     radius = 14.dp,
                     offset = DpOffset(0.dp, 2.dp),
                     color = Color.Black.copy(alpha = 0.42f),
-                    alpha = 0.95f
+                    alpha = if (flatNavMaterial) 0f else 0.95f
                 )
             },
             innerShadow = {
@@ -111,18 +99,14 @@ fun GlassSurface(
                     radius = 2.dp,
                     offset = DpOffset(0.dp, (-0.75).dp),
                     color = Color.White.copy(alpha = 0.14f),
-                    alpha = 0.85f
+                    alpha = if (flatNavMaterial) 0f else 0.85f
                 )
             },
             onDrawSurface = {
                 if (navMaterial) {
-                    // Exactly the inactive-tab material: a low-alpha neutral wash over
-                    // the sampled backdrop, with no opaque underlay.
+                    // Translucent and theme-aware; never add a solid underlay.
                     drawRect(navbarInactiveMaterial)
                 } else {
-                    if (surfaceBaseAlpha > 0f) {
-                        drawRect(resolvedSurfaceBaseColor.copy(alpha = surfaceBaseAlpha.coerceIn(0f, 1f)))
-                    }
                     drawRect(Color.White.copy(alpha = surfaceAlpha))
                     drawRect(Color.Black.copy(alpha = 0.018f))
                 }
