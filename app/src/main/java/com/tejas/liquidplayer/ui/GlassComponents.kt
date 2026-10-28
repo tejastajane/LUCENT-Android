@@ -1,6 +1,9 @@
 package com.tejas.liquidplayer.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.size
@@ -12,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -98,11 +102,24 @@ fun GlassIconButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
+    val view = LocalView.current
+    val base = modifier.size(48.dp).clip(RoundedCornerShape(50.dp))
+    val inputModifier = if (onLongClick != null) {
+        base.pointerInput(onClick, onLongClick) {
+            detectTapGestures(
+                onTap = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
+                onLongPress = { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); onLongClick() }
+            )
+        }
+    } else {
+        base.clickable { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() }
+    }
     GlassSurface(
         backdrop = backdrop,
-        modifier = modifier.size(48.dp).clip(RoundedCornerShape(50.dp)).clickable(onClick = onClick),
+        modifier = inputModifier,
         cornerRadius = 50.dp,
         surfaceAlpha = 0.075f
     ) {
