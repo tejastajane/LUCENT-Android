@@ -646,15 +646,6 @@ fun VideoPlayerScreen(
                             modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
                             onClick = rotateScreen
                         )
-                    } else {
-                        // In portrait, swap the edge and center-leading positions of lock/rotation.
-                        GlassIconButton(
-                            backdrop,
-                            Icons.Default.Lock,
-                            "Lock controls",
-                            modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
-                            onClick = lockControls
-                        )
                     }
 
                     Row(
@@ -671,11 +662,12 @@ fun VideoPlayerScreen(
                                 onClick = lockControls
                             )
                         } else {
+                            // Portrait has no lock control: rotation occupies the lock slot.
                             GlassIconButton(
                                 backdrop,
                                 Icons.Default.ScreenRotation,
                                 "Rotate screen",
-                                modifier = Modifier.size(width = 46.dp, height = 44.dp),
+                                modifier = Modifier.size(width = 48.dp, height = 44.dp),
                                 onClick = rotateScreen
                             )
                         }
