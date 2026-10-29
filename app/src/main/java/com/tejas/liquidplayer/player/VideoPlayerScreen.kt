@@ -375,6 +375,7 @@ fun VideoPlayerScreen(
         awaitEachGesture { awaitFirstDown(pass = PointerEventPass.Initial); controlsInteractionToken++ }
     }) {
         val isLandscape = maxWidth > maxHeight
+        val screenWidth = maxWidth
         val frame = backdropFrame
         val frameRevision = backdropFrameVersion
         if (frame != null) {
@@ -699,7 +700,7 @@ fun VideoPlayerScreen(
             ) {
                 GlassSurface(
                     backdrop,
-                    modifier = Modifier.fillMaxHeight().width(if (isLandscape) 340.dp else (maxWidth - 24.dp).coerceAtLeast(280.dp)).padding(12.dp).clickable(
+                    modifier = Modifier.fillMaxHeight().width(if (isLandscape) 340.dp else (screenWidth - 24.dp).coerceAtLeast(280.dp)).padding(12.dp).clickable(
                         indication = null,
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                     ) {},
