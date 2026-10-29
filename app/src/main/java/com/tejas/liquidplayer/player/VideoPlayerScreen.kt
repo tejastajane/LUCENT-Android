@@ -619,7 +619,7 @@ fun VideoPlayerScreen(
                 Spacer(Modifier.height(if (isLandscape) 12.dp else 8.dp))
 
                 val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
-                val rotateScreen = {
+                val rotateScreen: () -> Unit = {
                     manualRotation = true
                     val targetOrientation = if (isLandscape) {
                         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -629,7 +629,7 @@ fun VideoPlayerScreen(
                     activity?.requestedOrientation = targetOrientation
                     controlsInteractionToken++
                 }
-                val lockControls = {
+                val lockControls: () -> Unit = {
                     controlsLocked = true
                     showUnlockButton = true
                     panel = PlayerPanel.None
