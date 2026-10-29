@@ -109,6 +109,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tejas.liquidplayer.ui.liquid.LiquidBottomTab
@@ -194,20 +197,11 @@ fun MainLibraryUi(
             exit = fadeOut(tween(130)) + slideOutVertically(tween(180)) { it * 3 }
         ) {
             val item = recentVideo
-            if (item != null) GlassSurface(
+            if (item != null) ResumePlaybackPill(
                 backdrop = backdrop,
-                // Reuse the inactive navbar material: no opaque plate, extra bevel,
-                // or outer clip layer. drawBackdrop owns the pill shape and refraction.
-                modifier = Modifier.clickable(interactionSource = null, indication = null) { onPlay(item) },
-                cornerRadius = 50.dp,
-                navMaterial = true,
-                flatNavMaterial = true
-            ) {
-                Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Icon(Icons.Default.PlayArrow, if (hasResumeHistory) "Resume video" else "Play video", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(21.dp))
-                    Text(if (hasResumeHistory) "Resume" else "Play", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onBackground)
-                }
-            }
+                hasResumeHistory = hasResumeHistory,
+                onClick = { onPlay(item) }
+            )
         }
         BottomNavigation(
             backdrop = backdrop,
@@ -254,22 +248,24 @@ private fun VideosScreen(
     onChooseVideoFile: () -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
-    val filtered = remember(videos, category, selectedFolder) {
-        videos.filter { item ->
-            val name = item.name.lowercase(Locale.ROOT)
-            val pathSegments = item.relativePath.split('/').map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank)
-            val looksLikeTvEpisode = isLikelyTvEpisode(item.name, pathSegments)
-            val isAnime = pathSegments.any { it.contains("anime") } ||
-                listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
-            val matchesCategory = when (category) {
-                "Movies" -> !looksLikeTvEpisode
-                "TV Shows" -> looksLikeTvEpisode
-                "Anime" -> isAnime
-                "Recent" -> true
-                else -> true
-            }
-            matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
-        }.let { items -> if (category == "Recent") items.sortedByDescending(VideoItem::dateAddedSeconds) else items }
+    // Recompute directly from the selected chip. TV detection uses both release
+    // naming conventions and media-store folder hierarchy, not only one regex.
+    val filtered = videos.filter { item ->
+        val name = item.name.lowercase(Locale.ROOT)
+        val pathSegments = item.relativePath.split('/').map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank)
+        val looksLikeTvEpisode = isLikelyTvEpisode(item.name, pathSegments)
+        val isAnime = pathSegments.any { it.contains("anime") } ||
+            listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
+        val matchesCategory = when (category) {
+            "Movies" -> !looksLikeTvEpisode
+            "TV Shows" -> looksLikeTvEpisode
+            "Anime" -> isAnime
+            "Recent" -> true
+            else -> true
+        }
+        matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
+    }.let { items ->
+        if (category == "Recent") items.sortedByDescending(VideoItem::dateAddedSeconds) else items
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -776,14 +772,69 @@ private fun BottomNavigation(
 
 
 private val tvEpisodeNamePattern = Regex(
-    """(?i)(?:\bs\d{1,2}\s*[._ -]*e\d{1,3}\b|\b\d{1,2}\s*x\s*\d{1,3}\b|\b(?:season|episode|ep)\s*[._ #:-]*\d{1,3}\b|\b\d{1,2}e\d{1,3}\b)"""
+    """(?i)(?:\bs\d{1,2}\s*[._ -]*e\d{1,3}\b|\b\d{1,2}\s*x\s*\d{1,3}\b|\b(?:season|episode|ep)\s*[._ #:-]*\d{1,3}\b|\b\d{1,2}e\d{1,3}\b|^\s*(?:episode|ep)[ ._-]*\d{1,3}\b)"""
 )
 private val tvFolderPattern = Regex(
-    """(?i)^(?:tv|tv shows?|shows?|series|web[ ._-]*series|episodes?|season[ ._-]*\d+|s\d{1,2})$"""
+    """(?i)^(?:tv|tv shows?|shows?|series|web[ ._-]*series|episodes?|season[ ._-]*\d+|s\d{1,2}|anime series|cartoon series)$"""
 )
 
 private fun isLikelyTvEpisode(name: String, pathSegments: List<String>): Boolean {
     val stem = name.substringBeforeLast('.', name).lowercase(Locale.ROOT).replace('_', ' ')
+    // Some downloads use leading episode numbers inside per-show folders.
+    val numberedEpisode = Regex("""(?i)^\s*\[?\d{1,3}\]?\s*[._ -]+""").containsMatchIn(stem) &&
+        pathSegments.any { it.contains("season") || it.contains("series") || it.contains("tv") || it.contains("anime") }
     return tvEpisodeNamePattern.containsMatchIn(stem) ||
+        numberedEpisode ||
         pathSegments.any { segment -> tvFolderPattern.matches(segment) }
+}
+
+
+@Composable
+private fun ResumePlaybackPill(
+    backdrop: Backdrop,
+    hasResumeHistory: Boolean,
+    onClick: () -> Unit
+) {
+    val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val inactiveNavbarSurface = if (lightTheme) {
+        Color.Black.copy(alpha = 0.04f)
+    } else {
+        Color.White.copy(alpha = 0.055f)
+    }
+    val shape = RoundedCornerShape(50.dp)
+
+    // A fresh implementation: no inherited GlassSurface, rim, ripple, or blur.
+    Row(
+        Modifier
+            .clickable(interactionSource = null, indication = null, onClick = onClick)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { shape },
+                effects = {
+                    vibrancy()
+                    lens(
+                        refractionHeight = 24.dp.toPx(),
+                        refractionAmount = 24.dp.toPx(),
+                        depthEffect = true,
+                        chromaticAberration = false
+                    )
+                },
+                onDrawSurface = { drawRect(inactiveNavbarSurface) }
+            )
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Icon(
+            Icons.Default.PlayArrow,
+            if (hasResumeHistory) "Resume video" else "Play video",
+            tint = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(21.dp)
+        )
+        Text(
+            if (hasResumeHistory) "Resume" else "Play",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+    }
 }
