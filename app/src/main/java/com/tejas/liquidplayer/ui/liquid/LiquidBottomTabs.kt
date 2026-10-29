@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +76,7 @@ fun LiquidBottomTabs(
     collapseProgress: Float = 0f,
     onCollapsedClick: (() -> Unit)? = null,
     collapsedContent: (@Composable () -> Unit)? = null,
+    activeContent: (@Composable (Int) -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -324,6 +326,20 @@ fun LiquidBottomTabs(
                 .height(selectedPillHeight)
                 .width(selectedPillWidth)
         ) {
+            if (activeContent != null) {
+                val activeIndex = dampedDragAnimation.value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                Box(
+                    Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapse },
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Box(
+                        Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        activeContent(activeIndex)
+                    }
+                }
+            }
             if (collapsedContent != null) {
                 Box(
                     Modifier.fillMaxSize()

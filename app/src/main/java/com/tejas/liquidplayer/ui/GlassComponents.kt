@@ -62,7 +62,7 @@ fun GlassSurface(
             effects = {
                 vibrancy()
                 if (navMaterial) {
-                    blur(8.dp.toPx())
+                    blur((if (flatNavMaterial) 16.dp else 8.dp).toPx())
                     lens(
                         refractionHeight = 24.dp.toPx(),
                         refractionAmount = 24.dp.toPx(),
@@ -140,7 +140,7 @@ fun GlassIconButton(
     onLongClick: (() -> Unit)? = null
 ) {
     val view = LocalView.current
-    val base = modifier.size(48.dp).clip(RoundedCornerShape(50.dp))
+    val base = modifier.size(width = 68.dp, height = 48.dp).clip(RoundedCornerShape(50.dp))
     val inputModifier = if (onLongClick != null) {
         base.pointerInput(onClick, onLongClick) {
             detectTapGestures(
@@ -155,7 +155,8 @@ fun GlassIconButton(
         backdrop = backdrop,
         modifier = inputModifier,
         cornerRadius = 50.dp,
-        surfaceAlpha = 0.075f
+        surfaceAlpha = 0.075f,
+        navMaterial = true
     ) {
         Icon(
             imageVector = icon,
