@@ -974,7 +974,7 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val thumbSize = 32.dp
+    val thumbSize = 26.dp
     val density = LocalDensity.current
     val thumbDiameterPx = with(density) { thumbSize.toPx() }
     val progress = if (durationMs > 0L) {
@@ -1010,8 +1010,9 @@ private fun LiquidSeekBar(
                 }
         ) {
             val radius = thumbDiameterPx / 2f
-            val startX = radius
-            val endX = (size.width - radius).coerceAtLeast(startX)
+            val startX = 0f
+            val endX = size.width
+            val thumbCenterX = radius + (size.width - thumbDiameterPx).coerceAtLeast(0f) * progress
             val centerY = size.height / 2f
             val stroke = 5.dp.toPx()
             drawLine(
@@ -1024,7 +1025,7 @@ private fun LiquidSeekBar(
             drawLine(
                 color = Color.White,
                 start = Offset(startX, centerY),
-                end = Offset(startX + (endX - startX) * progress, centerY),
+                end = Offset(thumbCenterX, centerY),
                 strokeWidth = stroke,
                 cap = StrokeCap.Round
             )
