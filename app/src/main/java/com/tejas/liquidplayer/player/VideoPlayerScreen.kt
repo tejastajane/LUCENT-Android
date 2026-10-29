@@ -728,6 +728,7 @@ fun VideoPlayerScreen(
                     }
                 }
             }
+        }
 
         if (controlsLocked && showUnlockButton && !isInPictureInPictureMode) {
             Box(Modifier.align(Alignment.CenterStart).padding(start = 24.dp)) {
