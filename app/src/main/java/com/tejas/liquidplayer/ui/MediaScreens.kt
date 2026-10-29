@@ -198,7 +198,7 @@ fun MainLibraryUi(
                 backdrop = backdrop,
                 // Reuse the inactive navbar material: no opaque plate, extra bevel,
                 // or outer clip layer. drawBackdrop owns the pill shape and refraction.
-                modifier = Modifier.clickable { onPlay(item) },
+                modifier = Modifier.clickable(interactionSource = null, indication = null) { onPlay(item) },
                 cornerRadius = 50.dp,
                 navMaterial = true,
                 flatNavMaterial = true
@@ -254,19 +254,23 @@ private fun VideosScreen(
     onChooseVideoFile: () -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
-    val filtered = videos.filter { item ->
-        val name = item.name.lowercase(Locale.ROOT)
-        val matchesCategory = when (category) {
-            "Movies" -> !Regex("""(?i)\b(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3}|season[ ._-]*\d+|episode[ ._-]*\d+)\b""").containsMatchIn(name) &&
-                !item.relativePath.lowercase(Locale.ROOT).split('/').any { it.trim() in setOf("tv", "tv shows", "shows", "series", "episodes") || it.trim().startsWith("season ") }
-            "TV Shows" -> Regex("""(?i)\b(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3}|season[ ._-]*\d+|episode[ ._-]*\d+)\b""").containsMatchIn(name) ||
-                item.relativePath.lowercase(Locale.ROOT).split('/').any { it.trim() in setOf("tv", "tv shows", "shows", "series", "episodes") || it.trim().startsWith("season ") }
-            "Anime" -> listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
-            "Recent" -> true
-            else -> true
-        }
-        matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
-    }.let { if (category == "Recent") it.sortedByDescending(VideoItem::dateAddedSeconds) else it }
+    val filtered = remember(videos, category, selectedFolder) {
+        videos.filter { item ->
+            val name = item.name.lowercase(Locale.ROOT)
+            val pathSegments = item.relativePath.split('/').map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank)
+            val looksLikeTvEpisode = isLikelyTvEpisode(item.name, pathSegments)
+            val isAnime = pathSegments.any { it.contains("anime") } ||
+                listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
+            val matchesCategory = when (category) {
+                "Movies" -> !looksLikeTvEpisode
+                "TV Shows" -> looksLikeTvEpisode
+                "Anime" -> isAnime
+                "Recent" -> true
+                else -> true
+            }
+            matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
+        }.let { items -> if (category == "Recent") items.sortedByDescending(VideoItem::dateAddedSeconds) else items }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -653,6 +657,10 @@ private fun BottomNavigation(
                 tabsCount = navItems.size,
                 modifier = Modifier.width(tabsWidth).height(tabsHeight),
                 collapseProgress = collapseProgress,
+                activeContent = { index ->
+                    val (icon, label) = navItems[index.coerceIn(0, navItems.lastIndex)]
+                    Icon(imageVector = icon, contentDescription = label, tint = activeIconColor, modifier = Modifier.size(26.dp))
+                },
                 onCollapsedClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onSearchQueryChange("")
@@ -672,7 +680,7 @@ private fun BottomNavigation(
                         Icon(
                             imageVector = icon,
                             contentDescription = label,
-                            tint = if (selectedTab == index) activeIconColor else inactiveIconColor,
+                            tint = inactiveIconColor,
                             modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
                         )
                         Text(
@@ -764,4 +772,18 @@ private fun BottomNavigation(
             }
         }
     }
+}
+
+
+private val tvEpisodeNamePattern = Regex(
+    """(?i)(?:\bs\d{1,2}\s*[._ -]*e\d{1,3}\b|\b\d{1,2}\s*x\s*\d{1,3}\b|\b(?:season|episode|ep)\s*[._ #:-]*\d{1,3}\b|\b\d{1,2}e\d{1,3}\b)"""
+)
+private val tvFolderPattern = Regex(
+    """(?i)^(?:tv|tv shows?|shows?|series|web[ ._-]*series|episodes?|season[ ._-]*\d+|s\d{1,2})$"""
+)
+
+private fun isLikelyTvEpisode(name: String, pathSegments: List<String>): Boolean {
+    val stem = name.substringBeforeLast('.', name).lowercase(Locale.ROOT).replace('_', ' ')
+    return tvEpisodeNamePattern.containsMatchIn(stem) ||
+        pathSegments.any { segment -> tvFolderPattern.matches(segment) }
 }

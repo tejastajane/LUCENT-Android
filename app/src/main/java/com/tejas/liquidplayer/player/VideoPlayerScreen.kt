@@ -63,6 +63,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -153,6 +156,8 @@ fun VideoPlayerScreen(
 
     var panel by remember { mutableStateOf(PlayerPanel.None) }
     var controlsVisible by remember { mutableStateOf(true) }
+    var controlsLocked by remember(video.uri) { mutableStateOf(false) }
+    var repeatEnabled by remember(playerPreferences) { mutableStateOf(playerPreferences.getBoolean("repeat_enabled", false)) }
     var isPlaying by remember { mutableStateOf(false) }
     var playbackError by remember(video.uri) { mutableStateOf<String?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
@@ -187,10 +192,14 @@ fun VideoPlayerScreen(
     }
 
     BackHandler(enabled = !isInPictureInPictureMode) {
-        if (panel != PlayerPanel.None) panel = PlayerPanel.None else { persistProgress(); onClose() }
+        if (controlsLocked) {
+            controlsLocked = false
+            controlsVisible = true
+            controlsInteractionToken++
+        } else if (panel != PlayerPanel.None) panel = PlayerPanel.None else { persistProgress(); onClose() }
     }
-    LaunchedEffect(controlsVisible, panel, controlsInteractionToken, isInPictureInPictureMode) {
-        if (controlsVisible && panel == PlayerPanel.None && !isInPictureInPictureMode) {
+    LaunchedEffect(controlsVisible, controlsLocked, panel, controlsInteractionToken, isInPictureInPictureMode) {
+        if (controlsVisible && !controlsLocked && panel == PlayerPanel.None && !isInPictureInPictureMode) {
             delay(4_000L)
             controlsVisible = false
         }
@@ -303,6 +312,14 @@ fun VideoPlayerScreen(
                             positionMs = savedPositionMs
                         }
                         resumePositionApplied = true
+                    }
+                }
+                MediaPlayer.Event.EndReached -> mainHandler.post {
+                    if (playerPreferences.getBoolean("repeat_enabled", false)) {
+                        runCatching {
+                            controller.seekTo(0L)
+                            controller.player.play()
+                        }
                     }
                 }
                 MediaPlayer.Event.EncounteredError -> {
@@ -448,11 +465,13 @@ fun VideoPlayerScreen(
                 .pointerInput(gesturesEnabled, video.uri) {
                     detectTapGestures(
                         onTap = {
-                            controlsVisible = !controlsVisible
-                            controlsInteractionToken++
-                            if (!controlsVisible) panel = PlayerPanel.None
+                            if (!controlsLocked) {
+                                controlsVisible = !controlsVisible
+                                controlsInteractionToken++
+                                if (!controlsVisible) panel = PlayerPanel.None
+                            }
                         },
-                        onDoubleTap = if (gesturesEnabled) { offset ->
+                        onDoubleTap = if (gesturesEnabled && !controlsLocked) { offset ->
                             when {
                                 offset.x < size.width * 0.30f -> controller.seekBy(-10_000L)
                                 offset.x > size.width * 0.70f -> controller.seekBy(10_000L)
@@ -463,8 +482,8 @@ fun VideoPlayerScreen(
                         } else null
                     )
                 }
-                .pointerInput(gesturesEnabled, video.uri) {
-                    if (gesturesEnabled) {
+                .pointerInput(gesturesEnabled, video.uri, controlsLocked) {
+                    if (gesturesEnabled && !controlsLocked) {
                         detectVerticalDragGestures(
                             onDragStart = { start ->
                                 verticalGestureZone = when {
@@ -480,7 +499,7 @@ fun VideoPlayerScreen(
                                 when (verticalGestureZone) {
                                     -1 -> {
                                         adjustmentMode = -1
-                                        brightness = (brightness - dragAmount / size.height * 1.4f).coerceIn(0.05f, 1f)
+                                        brightness = (brightness - dragAmount / size.height * 1.75f).coerceIn(0.05f, 1f)
                                         activity?.window?.let { window ->
                                             val params = window.attributes
                                             params.screenBrightness = brightness
@@ -489,7 +508,7 @@ fun VideoPlayerScreen(
                                     }
                                     1 -> {
                                         adjustmentMode = 1
-                                        volume = (volume - (dragAmount / size.height * 220f).roundToInt()).coerceIn(0, 200)
+                                        volume = (volume - (dragAmount / size.height * 275f).roundToInt()).coerceIn(0, 200)
                                         runCatching { controller.player.volume = volume }
                                     }
                                 }
@@ -502,7 +521,7 @@ fun VideoPlayerScreen(
 
 
         if (adjustmentMode != 0 && !isInPictureInPictureMode) {
-            Box(Modifier.align(if (adjustmentMode < 0) Alignment.CenterStart else Alignment.CenterEnd).padding(start = if (adjustmentMode < 0) 28.dp else 0.dp, end = if (adjustmentMode > 0) 28.dp else 0.dp)) {
+            Box(Modifier.align(if (adjustmentMode < 0) Alignment.CenterEnd else Alignment.CenterStart).padding(start = if (adjustmentMode > 0) 28.dp else 0.dp, end = if (adjustmentMode < 0) 28.dp else 0.dp)) {
                 AdjustmentIndicator(
                     icon = if (adjustmentMode < 0) Icons.Default.Brightness6 else Icons.Default.VolumeUp,
                     value = if (adjustmentMode < 0) "${(brightness * 100).toInt()}%" else "${(volume / 2).coerceIn(0, 100)}%",
@@ -517,10 +536,11 @@ fun VideoPlayerScreen(
             }
         }
 
-        if (controlsVisible && !isInPictureInPictureMode) {
+        if (controlsVisible && !controlsLocked && !isInPictureInPictureMode) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassIconButton(backdrop, Icons.Default.ArrowBack, "Back", onClick = { persistProgress(); onClose() })
+                    GlassIconButton(backdrop, Icons.Default.Lock, "Lock controls", onClick = { controlsLocked = true; panel = PlayerPanel.None; controlsVisible = false; controlsInteractionToken++ })
                     Column(Modifier.weight(1f)) {
                         Text(video.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                         Text("libVLC · Local playback", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
@@ -528,6 +548,19 @@ fun VideoPlayerScreen(
                     GlassIconButton(backdrop, Icons.Default.Audiotrack, "Audio tracks", onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Audio) })
                     GlassIconButton(backdrop, Icons.Default.ClosedCaption, "Subtitles", onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Subtitles) })
                     GlassIconButton(backdrop, Icons.Default.Tune, "Player tools", onClick = { panel = togglePanel(panel, PlayerPanel.Tools) })
+                    GlassIconButton(backdrop, Icons.Default.AspectRatio, "Aspect ratio", onClick = {
+                        selectedAspectIndex = (selectedAspectIndex + 1) % aspectRatios.size
+                        controller.setAspectRatio(aspectRatios[selectedAspectIndex].second)
+                        showAspectRatioFeedback = true
+                    }, onLongClick = { panel = PlayerPanel.AspectRatio })
+                    GlassIconButton(backdrop, Icons.Default.PictureInPictureAlt, "Picture-in-picture", onClick = {
+                        persistProgress()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null &&
+                            context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                            val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
+                            runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)).build()) }
+                        }
+                    })
                 }
 
                 Spacer(Modifier.weight(1f))
@@ -549,17 +582,30 @@ fun VideoPlayerScreen(
                             inactiveTrackColor = Color.White.copy(alpha = 0.38f),
                             activeTickColor = Color.Transparent,
                             inactiveTickColor = Color.Transparent
-                        )
+                        ),
+                        thumb = {
+                            GlassSurface(
+                                backdrop = backdrop,
+                                modifier = Modifier.size(22.dp),
+                                cornerRadius = 50.dp,
+                                navMaterial = true
+                            ) {}
+                        }
                     )
                     Text(formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelMedium)
                 }
 
-                Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    GlassIconButton(backdrop, Icons.Default.Lock, "Lock controls", onClick = { controlsVisible = false })
-                    Spacer(Modifier.weight(1f))
-                    val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
+                val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    GlassIconButton(backdrop, Icons.Default.Menu, "Player tools", modifier = Modifier.size(width = 68.dp, height = 48.dp), onClick = { panel = togglePanel(panel, PlayerPanel.Tools) })
+                    Spacer(Modifier.width(10.dp))
                     GlassIconButton(
                         backdrop, Icons.Default.SkipPrevious, "Previous video",
+                        modifier = Modifier.size(width = 68.dp, height = 48.dp),
                         onClick = {
                             if (currentVideoIndex > 0) {
                                 persistProgress()
@@ -567,11 +613,19 @@ fun VideoPlayerScreen(
                             }
                         }
                     )
-                    Spacer(Modifier.width(12.dp))
-                    GlassIconButton(backdrop, if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (isPlaying) "Pause" else "Play", modifier = Modifier.size(60.dp), selected = true, onClick = { controller.togglePlayPause() })
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(10.dp))
+                    GlassIconButton(
+                        backdrop,
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(width = 80.dp, height = 52.dp),
+                        selected = true,
+                        onClick = { controller.togglePlayPause() }
+                    )
+                    Spacer(Modifier.width(10.dp))
                     GlassIconButton(
                         backdrop, Icons.Default.SkipNext, "Next video",
+                        modifier = Modifier.size(width = 68.dp, height = 48.dp),
                         onClick = {
                             if (currentVideoIndex >= 0 && currentVideoIndex < playlist.lastIndex) {
                                 persistProgress()
@@ -579,22 +633,29 @@ fun VideoPlayerScreen(
                             }
                         }
                     )
-                    Spacer(Modifier.weight(1f))
-                    GlassIconButton(backdrop, Icons.Default.AspectRatio, "Aspect ratio", onClick = {
-                        selectedAspectIndex = (selectedAspectIndex + 1) % aspectRatios.size
-                        controller.setAspectRatio(aspectRatios[selectedAspectIndex].second)
-                        showAspectRatioFeedback = true
-                    }, onLongClick = { panel = PlayerPanel.AspectRatio })
-                    Spacer(Modifier.width(4.dp))
-                    GlassIconButton(backdrop, Icons.Default.PictureInPictureAlt, "Picture-in-picture", onClick = {
-                        persistProgress()
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null &&
-                            context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
-                            val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
-                            runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)).build()) }
+                    Spacer(Modifier.width(10.dp))
+                    GlassIconButton(
+                        backdrop, Icons.Default.Repeat, if (repeatEnabled) "Disable repeat" else "Repeat video",
+                        modifier = Modifier.size(width = 68.dp, height = 48.dp),
+                        selected = repeatEnabled,
+                        onClick = {
+                            repeatEnabled = !repeatEnabled
+                            playerPreferences.edit().putBoolean("repeat_enabled", repeatEnabled).apply()
                         }
-                    })
+                    )
                 }
+            }
+        }
+
+        if (controlsLocked && !isInPictureInPictureMode) {
+            Box(Modifier.align(Alignment.CenterStart).padding(start = 24.dp)) {
+                GlassIconButton(
+                    backdrop,
+                    Icons.Default.LockOpen,
+                    "Unlock controls",
+                    modifier = Modifier.size(width = 68.dp, height = 48.dp),
+                    onClick = { controlsLocked = false; controlsVisible = true; controlsInteractionToken++ }
+                )
             }
         }
 
@@ -613,7 +674,9 @@ fun VideoPlayerScreen(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                     ) {},
                     cornerRadius = 28.dp,
-                    surfaceAlpha = 0.11f
+                    surfaceAlpha = 0.11f,
+                    navMaterial = true,
+                    flatNavMaterial = true
                 ) {
                     Column(Modifier.fillMaxSize().padding(18.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -805,10 +868,10 @@ private fun AspectRatioPanel(onSelect: (String, String?) -> Unit) {
 
 @Composable
 private fun AdjustmentIndicator(icon: ImageVector, value: String, level: Float, label: String) {
-    Column(Modifier.width(72.dp).clip(RoundedCornerShape(28.dp)).background(Color.Black.copy(alpha = 0.78f)).padding(horizontal = 14.dp, vertical = 15.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.width(72.dp).padding(horizontal = 10.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(icon, label, tint = Color.White, modifier = Modifier.size(23.dp))
         Text(value, color = Color.White, style = MaterialTheme.typography.labelMedium)
-        Box(Modifier.width(5.dp).height(80.dp).clip(RoundedCornerShape(50.dp)).background(Color.White.copy(alpha = 0.24f)), contentAlignment = Alignment.BottomCenter) {
+        Box(Modifier.width(3.dp).height(80.dp), contentAlignment = Alignment.BottomCenter) {
             Box(Modifier.fillMaxWidth().fillMaxHeight(level.coerceIn(0.02f, 1f)).clip(RoundedCornerShape(50.dp)).background(Color.White))
         }
     }
