@@ -62,7 +62,7 @@ fun GlassSurface(
             effects = {
                 vibrancy()
                 if (navMaterial) {
-                    blur((if (flatNavMaterial) 16.dp else 8.dp).toPx())
+                    blur(8.dp.toPx())
                     lens(
                         refractionHeight = 24.dp.toPx(),
                         refractionAmount = 24.dp.toPx(),

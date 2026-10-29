@@ -333,7 +333,7 @@ fun LiquidBottomTabs(
                     contentAlignment = Alignment.TopCenter
                 ) {
                     Box(
-                        Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
+                        Modifier.padding(top = lerp(16f, 18f, collapse).dp).size(26.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         activeContent(activeIndex)
