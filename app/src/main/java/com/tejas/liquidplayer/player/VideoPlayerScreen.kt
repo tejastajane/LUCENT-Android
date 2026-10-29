@@ -566,19 +566,8 @@ fun VideoPlayerScreen(
                         }
                         GlassIconButton(backdrop, Icons.Default.Audiotrack, "Audio tracks", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Audio) })
                         GlassIconButton(backdrop, Icons.Default.ClosedCaption, "Subtitles", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Subtitles) })
-                        GlassIconButton(backdrop, Icons.Default.AspectRatio, "Aspect ratio", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = {
-                            selectedAspectIndex = (selectedAspectIndex + 1) % aspectRatios.size
-                            controller.setAspectRatio(aspectRatios[selectedAspectIndex].second)
-                            showAspectRatioFeedback = true
-                        }, onLongClick = { panel = PlayerPanel.AspectRatio })
-                        GlassIconButton(backdrop, Icons.Default.PictureInPictureAlt, "Picture-in-picture", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = {
-                            persistProgress()
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null &&
-                                context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
-                                val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
-                                runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)).build()) }
-                            }
-                        })
+                        // The menu moved from the transport row into the former top tools slot.
+                        GlassIconButton(backdrop, Icons.Default.Menu, "Player tools", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = { panel = togglePanel(panel, PlayerPanel.Tools) })
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -588,6 +577,7 @@ fun VideoPlayerScreen(
                         }
                         GlassIconButton(backdrop, Icons.Default.Audiotrack, "Audio tracks", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Audio) })
                         GlassIconButton(backdrop, Icons.Default.ClosedCaption, "Subtitles", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = { trackSelectionMessage = null; panel = togglePanel(panel, PlayerPanel.Subtitles) })
+                        GlassIconButton(backdrop, Icons.Default.Menu, "Player tools", modifier = Modifier.size(width = 48.dp, height = 44.dp), onClick = { panel = togglePanel(panel, PlayerPanel.Tools) })
                     }
                 }
 
@@ -641,11 +631,6 @@ fun VideoPlayerScreen(
                         horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 10.dp else 8.dp)
                     ) {
                         GlassIconButton(
-                            backdrop, Icons.Default.Menu, "Player tools",
-                            modifier = Modifier.size(width = if (isLandscape) 68.dp else 46.dp, height = 44.dp),
-                            onClick = { panel = togglePanel(panel, PlayerPanel.Tools) }
-                        )
-                        GlassIconButton(
                             backdrop, Icons.Default.SkipPrevious, "Previous video",
                             modifier = Modifier.size(width = if (isLandscape) 68.dp else 46.dp, height = 44.dp),
                             onClick = {
@@ -670,6 +655,32 @@ fun VideoPlayerScreen(
                                 if (currentVideoIndex >= 0 && currentVideoIndex < playlist.lastIndex) {
                                     persistProgress()
                                     onSelectVideo(playlist[currentVideoIndex + 1])
+                                }
+                            }
+                        )
+                        GlassIconButton(
+                            backdrop, Icons.Default.AspectRatio, "Aspect ratio",
+                            modifier = Modifier.size(width = if (isLandscape) 68.dp else 46.dp, height = 44.dp),
+                            onClick = {
+                                selectedAspectIndex = (selectedAspectIndex + 1) % aspectRatios.size
+                                controller.setAspectRatio(aspectRatios[selectedAspectIndex].second)
+                                showAspectRatioFeedback = true
+                            },
+                            onLongClick = { panel = PlayerPanel.AspectRatio }
+                        )
+                    }
+                    if (isLandscape) {
+                        GlassIconButton(
+                            backdrop,
+                            Icons.Default.PictureInPictureAlt,
+                            "Picture-in-picture",
+                            modifier = Modifier.align(Alignment.CenterEnd).size(width = 48.dp, height = 44.dp),
+                            onClick = {
+                                persistProgress()
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null &&
+                                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                                    val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
+                                    runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)).build()) }
                                 }
                             }
                         )
