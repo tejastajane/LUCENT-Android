@@ -802,7 +802,8 @@ private fun ResumePlaybackPill(
         ),
         cornerRadius = 50.dp,
         surfaceAlpha = 0.055f,
-        navMaterial = true
+        navMaterial = true,
+        clampNavLensToSurfaceHeight = true
     ) {
         Row(
             Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
