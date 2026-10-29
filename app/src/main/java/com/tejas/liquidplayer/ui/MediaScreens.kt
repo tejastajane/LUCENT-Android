@@ -796,47 +796,31 @@ private fun ResumePlaybackPill(
     hasResumeHistory: Boolean,
     onClick: () -> Unit
 ) {
-    val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val inactiveNavbarSurface = if (lightTheme) {
-        Color.Black.copy(alpha = 0.04f)
-    } else {
-        Color.White.copy(alpha = 0.055f)
-    }
-    val shape = RoundedCornerShape(50.dp)
-
-    // A fresh implementation: no inherited GlassSurface, rim, ripple, or blur.
-    Row(
-        Modifier
-            .clickable(interactionSource = null, indication = null, onClick = onClick)
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { shape },
-                effects = {
-                    vibrancy()
-                    lens(
-                        refractionHeight = 24.dp.toPx(),
-                        refractionAmount = 24.dp.toPx(),
-                        depthEffect = true,
-                        chromaticAberration = false
-                    )
-                },
-                onDrawSurface = { drawRect(inactiveNavbarSurface) }
-            )
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    // Match the Search button's GlassSurface material and lens/refraction settings.
+    GlassSurface(
+        backdrop = backdrop,
+        modifier = Modifier.clickable(interactionSource = null, indication = null, onClick = onClick),
+        cornerRadius = 50.dp,
+        surfaceAlpha = 0.055f,
+        navMaterial = true
     ) {
-        Icon(
-            Icons.Default.PlayArrow,
-            if (hasResumeHistory) "Resume video" else "Play video",
-            tint = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.size(21.dp)
-        )
-        Text(
-            if (hasResumeHistory) "Resume" else "Play",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                if (hasResumeHistory) "Resume video" else "Play video",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(21.dp)
+            )
+            Text(
+                if (hasResumeHistory) "Resume" else "Play",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
     }
 }
 

@@ -123,6 +123,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
@@ -556,11 +557,6 @@ fun VideoPlayerScreen(
                 if (isLandscape) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PlainBackButton(onClick = { persistProgress(); onClose() })
-                        GlassIconButton(
-                            backdrop, Icons.Default.Lock, "Lock controls",
-                            modifier = Modifier.size(width = 48.dp, height = 44.dp),
-                            onClick = { controlsLocked = true; panel = PlayerPanel.None; controlsVisible = false; controlsInteractionToken++ }
-                        )
                         Column(Modifier.weight(1f).padding(horizontal = 2.dp)) {
                             Text(video.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                         }
@@ -613,23 +609,46 @@ fun VideoPlayerScreen(
 
                 val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
                 Box(Modifier.fillMaxWidth().height(54.dp)) {
-                    GlassIconButton(
-                        backdrop,
-                        Icons.Default.ScreenRotation,
-                        "Rotate screen",
-                        modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
-                        onClick = {
-                            manualRotation = true
-                            val targetOrientation = if (isLandscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                            activity?.requestedOrientation = targetOrientation
-                            controlsInteractionToken++
-                        }
-                    )
+                    // Landscape keeps rotation at the far-left edge, like the reference.
+                    if (isLandscape) {
+                        GlassIconButton(
+                            backdrop,
+                            Icons.Default.ScreenRotation,
+                            "Rotate screen",
+                            modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
+                            onClick = {
+                                manualRotation = true
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                controlsInteractionToken++
+                            }
+                        )
+                    }
                     Row(
                         Modifier.align(Alignment.Center),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 10.dp else 8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 10.dp else 7.dp)
                     ) {
+                        if (!isLandscape) {
+                            GlassIconButton(
+                                backdrop,
+                                Icons.Default.ScreenRotation,
+                                "Rotate screen",
+                                modifier = Modifier.size(width = 48.dp, height = 44.dp),
+                                onClick = {
+                                    manualRotation = true
+                                    activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                    controlsInteractionToken++
+                                }
+                            )
+                        } else {
+                            GlassIconButton(
+                                backdrop,
+                                Icons.Default.Lock,
+                                "Lock controls",
+                                modifier = Modifier.size(width = 48.dp, height = 44.dp),
+                                onClick = { controlsLocked = true; panel = PlayerPanel.None; controlsVisible = false; controlsInteractionToken++ }
+                            )
+                        }
                         GlassIconButton(
                             backdrop, Icons.Default.SkipPrevious, "Previous video",
                             modifier = Modifier.size(width = if (isLandscape) 68.dp else 46.dp, height = 44.dp),
@@ -965,45 +984,52 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val thumbSize = 26.dp
+    var isDragging by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    val thumbDiameterPx = with(density) { thumbSize.toPx() }
+    val thumbWidth = if (isDragging) 22.dp else 16.dp
+    val thumbHeight = if (isDragging) 36.dp else 28.dp
+    val thumbWidthPx = with(density) { thumbWidth.toPx() }
+    // Keep gesture coordinates stable when the thumb expands while being dragged.
+    val touchThumbWidthPx = with(density) { 16.dp.toPx() }
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
     BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
-        val thumbTravel = (maxWidth - thumbSize).coerceAtLeast(0.dp)
+        val thumbTravel = (maxWidth - thumbWidth).coerceAtLeast(0.dp)
 
         Canvas(
             Modifier.fillMaxSize()
-                .pointerInput(durationMs, thumbDiameterPx) {
+                .pointerInput(durationMs, touchThumbWidthPx) {
                     detectTapGestures { point ->
-                        val usableWidth = (size.width - thumbDiameterPx).coerceAtLeast(1f)
-                        val fraction = ((point.x - thumbDiameterPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                        val usableWidth = (size.width - touchThumbWidthPx).coerceAtLeast(1f)
+                        val fraction = ((point.x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                         onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
                     }
                 }
-                .pointerInput(durationMs, thumbDiameterPx) {
+                .pointerInput(durationMs, touchThumbWidthPx) {
                     detectDragGestures(
                         onDragStart = { point ->
-                            val usableWidth = (size.width - thumbDiameterPx).coerceAtLeast(1f)
-                            val fraction = ((point.x - thumbDiameterPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                            isDragging = true
+                            val usableWidth = (size.width - touchThumbWidthPx).coerceAtLeast(1f)
+                            val fraction = ((point.x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                             onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
                         },
+                        onDragEnd = { isDragging = false },
+                        onDragCancel = { isDragging = false },
                         onDrag = { change, _ ->
-                            val usableWidth = (size.width - thumbDiameterPx).coerceAtLeast(1f)
-                            val fraction = ((change.position.x - thumbDiameterPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                            val usableWidth = (size.width - touchThumbWidthPx).coerceAtLeast(1f)
+                            val fraction = ((change.position.x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                             onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
                             change.consume()
                         }
                     )
                 }
         ) {
-            val radius = thumbDiameterPx / 2f
             val startX = 0f
             val endX = size.width
-            val thumbCenterX = radius + (size.width - thumbDiameterPx).coerceAtLeast(0f) * progress
+            val thumbCenterX = thumbWidthPx / 2f +
+                (size.width - thumbWidthPx).coerceAtLeast(0f) * progress
             val centerY = size.height / 2f
             val stroke = 5.dp.toPx()
             drawLine(
@@ -1022,50 +1048,66 @@ private fun LiquidSeekBar(
             )
         }
 
-        Box(
-            Modifier.align(Alignment.CenterStart)
-                .offset(x = thumbTravel * progress)
-                .size(thumbSize)
-                .drawBackdrop(
+        val thumbModifier = Modifier
+            .align(Alignment.CenterStart)
+            .offset(x = thumbTravel * progress)
+            .size(width = thumbWidth, height = thumbHeight)
+
+        if (!isDragging) {
+            // Idle material is identical to the other player controls.
+            GlassSurface(
+                backdrop = backdrop,
+                modifier = thumbModifier,
+                cornerRadius = 50.dp,
+                surfaceAlpha = 0.055f,
+                navMaterial = true
+            ) {}
+        } else {
+            // While scrubbing, lift the same capsule with a stronger Backdrop lens,
+            // highlight and shadow. It returns to the standard control material on release.
+            Box(
+                thumbModifier.drawBackdrop(
                     backdrop = backdrop,
-                    shape = { CircleShape },
+                    shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         vibrancy()
+                        blur(8.dp.toPx())
                         lens(
-                            refractionHeight = 10.dp.toPx(),
-                            refractionAmount = 14.dp.toPx(),
+                            refractionHeight = 20.dp.toPx(),
+                            refractionAmount = 26.dp.toPx(),
                             depthEffect = true,
                             chromaticAberration = false
                         )
                     },
                     highlight = {
                         Highlight.Default.copy(
-                            width = 1.2.dp,
-                            blurRadius = 1.4.dp,
-                            alpha = 0.85f
+                            width = 1.4.dp,
+                            blurRadius = 1.5.dp,
+                            alpha = 1f
                         )
                     },
                     shadow = {
                         Shadow(
-                            radius = 5.dp,
-                            offset = DpOffset(0.dp, 1.dp),
-                            color = Color.Black.copy(alpha = 0.28f),
-                            alpha = 0.7f
+                            radius = 14.dp,
+                            offset = DpOffset(0.dp, 3.dp),
+                            color = Color.Black.copy(alpha = 0.5f),
+                            alpha = 1f
                         )
                     },
                     innerShadow = {
                         InnerShadow(
-                            radius = 2.dp,
-                            offset = DpOffset(0.dp, (-0.5).dp),
-                            color = Color.White.copy(alpha = 0.22f),
-                            alpha = 0.8f
+                            radius = 3.dp,
+                            offset = DpOffset(0.dp, (-1).dp),
+                            color = Color.White.copy(alpha = 0.25f),
+                            alpha = 0.95f
                         )
                     },
                     onDrawSurface = {
-                        drawRect(Color.White.copy(alpha = 0.07f))
-                        drawRect(Color.Black.copy(alpha = 0.08f))
+                        drawRect(Color.White.copy(alpha = 0.055f))
+                        drawRect(Color.Black.copy(alpha = 0.025f))
                     }
                 )
-        )
+            )
+        }
     }
 }
