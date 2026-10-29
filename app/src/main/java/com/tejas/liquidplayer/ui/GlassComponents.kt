@@ -64,7 +64,10 @@ fun GlassSurface(
                 if (navMaterial) {
                     blur(8.dp.toPx())
                     lens(
-                        refractionHeight = 24.dp.toPx(),
+                        refractionHeight = minOf(
+                            24.dp.toPx(),
+                            (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
+                        ),
                         refractionAmount = 24.dp.toPx(),
                         depthEffect = true,
                         chromaticAberration = false
