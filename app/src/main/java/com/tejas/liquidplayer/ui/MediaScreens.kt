@@ -799,7 +799,7 @@ private fun ResumePlaybackPill(
     // Match the Search button's GlassSurface material and lens/refraction settings.
     GlassSurface(
         backdrop = backdrop,
-        modifier = Modifier.clickable(interactionSource = null, indication = null, onClick = onClick),
+        modifier = Modifier.clip(RoundedCornerShape(50.dp)).clickable(interactionSource = null, indication = null, onClick = onClick),
         cornerRadius = 50.dp,
         surfaceAlpha = 0.055f,
         navMaterial = true
