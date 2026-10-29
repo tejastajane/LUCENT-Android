@@ -1,0 +1,94 @@
+name: Android build and playback test
+
+on:
+  push:
+    branches:
+      - main
+      - "implementation/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Build APK and test libVLC playback
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle 9.7.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.7.1"
+
+      - name: Build production APK and isolated CI test APK
+        run: gradle --no-daemon --stacktrace :app:assembleProductionDebug :app:assembleCiDebug
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquid-player-debug-apk
+          path: app/build/outputs/apk/production/debug/app-production-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build instrumentation test APK
+        run: gradle --no-daemon --stacktrace :app:assembleCiDebugAndroidTest
+
+      - name: Generate short local video fixture
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x240:rate=24 \
+            -t 8 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -movflags +faststart liquidplayer-smoke.mp4
+
+      - name: Run libVLC playback smoke test on Android emulator
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 2048 -cores 2 -wipe-data
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            # Use this run's unique package id so a restored emulator snapshot cannot leave a conflicting signature.
+            adb uninstall "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" || true
+            adb uninstall "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}.test" || true
+            adb install app/build/outputs/apk/ci/debug/app-ci-debug.apk
+            adb push liquidplayer-smoke.mp4 /data/local/tmp/liquidplayer-smoke.mp4
+            adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" mkdir -p cache
+            adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest
+
+      - name: Upload Android test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquid-player-android-test-results
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: ignore
+          retention-days: 14
