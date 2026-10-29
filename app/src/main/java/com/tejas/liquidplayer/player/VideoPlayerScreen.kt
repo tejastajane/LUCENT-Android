@@ -29,7 +29,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -1001,29 +1000,40 @@ private fun LiquidSeekBar(
         Canvas(
             Modifier.fillMaxSize()
                 .pointerInput(durationMs, touchThumbWidthPx) {
-                    detectTapGestures { point ->
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial
+                        )
                         val usableWidth = (size.width - touchThumbWidthPx).coerceAtLeast(1f)
-                        val fraction = ((point.x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                        onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                    }
-                }
-                .pointerInput(durationMs, touchThumbWidthPx) {
-                    detectDragGestures(
-                        onDragStart = { point ->
-                            isDragging = true
-                            val usableWidth = (size.width - touchThumbWidthPx).coerceAtLeast(1f)
-                            val fraction = ((point.x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                        fun seekAt(x: Float) {
+                            val fraction = ((x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                             onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                        },
-                        onDragEnd = { isDragging = false },
-                        onDragCancel = { isDragging = false },
-                        onDrag = { change, _ ->
-                            val usableWidth = (size.width - touchThumbWidthPx).coerceAtLeast(1f)
-                            val fraction = ((change.position.x - touchThumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                            onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                            change.consume()
                         }
-                    )
+
+                        var dragged = false
+                        isDragging = true
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    if (!dragged) seekAt(change.position.x)
+                                    change.consume()
+                                    break
+                                }
+                                if (!dragged && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                                    dragged = true
+                                }
+                                if (dragged) {
+                                    seekAt(change.position.x)
+                                    change.consume()
+                                }
+                            }
+                        } finally {
+                            isDragging = false
+                        }
+                    }
                 }
         ) {
             val startX = 0f
