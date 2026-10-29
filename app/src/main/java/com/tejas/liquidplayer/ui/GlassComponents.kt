@@ -45,6 +45,7 @@ fun GlassSurface(
     surfaceAlpha: Float = 0.055f,
     navMaterial: Boolean = false,
     flatNavMaterial: Boolean = false,
+    clampNavLensToSurfaceHeight: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
     val isLightSurface = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -64,10 +65,14 @@ fun GlassSurface(
                 if (navMaterial) {
                     blur(8.dp.toPx())
                     lens(
-                        refractionHeight = minOf(
-                            24.dp.toPx(),
-                            (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
-                        ),
+                        refractionHeight = if (clampNavLensToSurfaceHeight) {
+                            minOf(
+                                24.dp.toPx(),
+                                (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
+                            )
+                        } else {
+                            24.dp.toPx()
+                        },
                         refractionAmount = 24.dp.toPx(),
                         depthEffect = true,
                         chromaticAberration = false
