@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -326,7 +327,7 @@ fun LiquidBottomTabs(
                 .width(selectedPillWidth)
         ) {
             if (activeContent != null) {
-                val activeIndex = dampedDragAnimation.value.roundToInt().fastCoerceIn(0, tabsCount - 1)
+                val activeIndex = dampedDragAnimation.value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
                 Box(
                     Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapse },
                     contentAlignment = Alignment.TopCenter

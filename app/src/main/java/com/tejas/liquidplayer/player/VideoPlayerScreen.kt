@@ -77,6 +77,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -127,6 +128,7 @@ import org.videolan.libvlc.util.VLCVideoLayout
 
 private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerScreen(
     video: VideoItem,
