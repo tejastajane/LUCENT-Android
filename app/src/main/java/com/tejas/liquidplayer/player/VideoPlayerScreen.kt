@@ -907,6 +907,15 @@ private fun AdjustmentIndicator(icon: ImageVector, value: String, level: Float, 
     }
 }
 
+@Composable
+private fun neutralSliderColors() = SliderDefaults.colors(
+    thumbColor = Color.White,
+    activeTrackColor = Color.White,
+    inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+    activeTickColor = Color.Transparent,
+    inactiveTickColor = Color.Transparent
+)
+
 private fun togglePanel(current: PlayerPanel, requested: PlayerPanel): PlayerPanel =
     if (current == requested) PlayerPanel.None else requested
 

@@ -256,8 +256,9 @@ private fun VideosScreen(
         val looksLikeTvEpisode = isLikelyTvEpisode(item.name, pathSegments)
         val isAnime = pathSegments.any { it.contains("anime") } ||
             listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
+        val isNonMovieFolder = pathSegments.any { nonMovieFolderPattern.matches(it) }
         val matchesCategory = when (category) {
-            "Movies" -> !looksLikeTvEpisode
+            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder
             "TV Shows" -> looksLikeTvEpisode
             "Anime" -> isAnime
             "Recent" -> true
@@ -838,3 +839,8 @@ private fun ResumePlaybackPill(
         )
     }
 }
+
+
+private val nonMovieFolderPattern = Regex(
+    """(?i)^(?:dcim|camera|screenshots?|screen[ ._-]*recordings?|screenrecordings?|recordings?|whatsapp(?:[ ._-]*videos?)?|telegram(?:[ ._-]*videos?)?|instagram|reels?|shorts?|clips?|statuses?|memes?)$"""
+)
