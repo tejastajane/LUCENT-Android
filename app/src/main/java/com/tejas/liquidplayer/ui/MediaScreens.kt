@@ -109,9 +109,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tejas.liquidplayer.ui.liquid.LiquidBottomTab
@@ -796,53 +793,36 @@ private fun ResumePlaybackPill(
     hasResumeHistory: Boolean,
     onClick: () -> Unit
 ) {
-    val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val inactiveNavbarSurface = if (lightTheme) {
-        Color.Black.copy(alpha = 0.04f)
-    } else {
-        Color.White.copy(alpha = 0.055f)
-    }
-    val shape = RoundedCornerShape(50.dp)
-
-    // A fresh implementation: no inherited GlassSurface, rim, ripple, or blur.
-    Row(
-        Modifier
-            .clickable(interactionSource = null, indication = null, onClick = onClick)
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { shape },
-                effects = {
-                    vibrancy()
-                    lens(
-                        refractionHeight = minOf(
-                            24.dp.toPx(),
-                            (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
-                        ),
-                        refractionAmount = 24.dp.toPx(),
-                        depthEffect = true,
-                        chromaticAberration = false
-                    )
-                },
-                onDrawSurface = { drawRect(inactiveNavbarSurface) }
-            )
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    GlassSurface(
+        backdrop = backdrop,
+        modifier = Modifier.clickable(
+            interactionSource = null,
+            indication = null,
+            onClick = onClick
+        ),
+        cornerRadius = 50.dp,
+        surfaceAlpha = 0.055f,
+        navMaterial = true
     ) {
-        Icon(
-            Icons.Default.PlayArrow,
-            if (hasResumeHistory) "Resume video" else "Play video",
-            tint = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.size(21.dp)
-        )
-        Text(
-            if (hasResumeHistory) "Resume" else "Play",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                if (hasResumeHistory) "Resume video" else "Play video",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(21.dp)
+            )
+            Text(
+                if (hasResumeHistory) "Resume" else "Play",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
     }
 }
-
 
 private val nonMovieFolderPattern = Regex(
     """(?i)^(?:dcim|camera|screenshots?|screen[ ._-]*recordings?|screenrecordings?|recordings?|whatsapp(?:[ ._-]*videos?)?|telegram(?:[ ._-]*videos?)?|instagram|reels?|shorts?|clips?|statuses?|memes?)$"""
