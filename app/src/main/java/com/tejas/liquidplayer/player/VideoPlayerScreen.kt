@@ -173,6 +173,7 @@ fun VideoPlayerScreen(
     var panel by remember { mutableStateOf(PlayerPanel.None) }
     var controlsVisible by remember { mutableStateOf(true) }
     var controlsLocked by remember(video.uri) { mutableStateOf(false) }
+    var showUnlockButton by remember(video.uri) { mutableStateOf(false) }
     var manualRotation by remember(video.uri) { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var playbackError by remember(video.uri) { mutableStateOf<String?>(null) }
@@ -210,6 +211,7 @@ fun VideoPlayerScreen(
     BackHandler(enabled = !isInPictureInPictureMode) {
         if (controlsLocked) {
             controlsLocked = false
+            showUnlockButton = false
             controlsVisible = true
             controlsInteractionToken++
         } else if (panel != PlayerPanel.None) panel = PlayerPanel.None else { persistProgress(); onClose() }
@@ -218,6 +220,12 @@ fun VideoPlayerScreen(
         if (controlsVisible && !controlsLocked && panel == PlayerPanel.None && !isInPictureInPictureMode) {
             delay(4_000L)
             controlsVisible = false
+        }
+    }
+    LaunchedEffect(controlsLocked, showUnlockButton, controlsInteractionToken) {
+        if (controlsLocked && showUnlockButton) {
+            delay(2_500L)
+            showUnlockButton = false
         }
     }
     LaunchedEffect(adjustmentMode, brightness, volume) {
@@ -371,8 +379,12 @@ fun VideoPlayerScreen(
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).pointerInput(video.uri) {
-        awaitEachGesture { awaitFirstDown(pass = PointerEventPass.Initial); controlsInteractionToken++ }
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).pointerInput(video.uri, controlsLocked) {
+        awaitEachGesture {
+            awaitFirstDown(pass = PointerEventPass.Initial)
+            controlsInteractionToken++
+            if (controlsLocked) showUnlockButton = true
+        }
     }) {
         val isLandscape = maxWidth > maxHeight
         val screenWidth = maxWidth
@@ -556,11 +568,6 @@ fun VideoPlayerScreen(
                 if (isLandscape) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PlainBackButton(onClick = { persistProgress(); onClose() })
-                        GlassIconButton(
-                            backdrop, Icons.Default.Lock, "Lock controls",
-                            modifier = Modifier.size(width = 48.dp, height = 44.dp),
-                            onClick = { controlsLocked = true; panel = PlayerPanel.None; controlsVisible = false; controlsInteractionToken++ }
-                        )
                         Column(Modifier.weight(1f).padding(horizontal = 2.dp)) {
                             Text(video.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                         }
@@ -612,24 +619,66 @@ fun VideoPlayerScreen(
                 Spacer(Modifier.height(if (isLandscape) 12.dp else 8.dp))
 
                 val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
+                val rotateScreen = {
+                    manualRotation = true
+                    val targetOrientation = if (isLandscape) {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    }
+                    activity?.requestedOrientation = targetOrientation
+                    controlsInteractionToken++
+                }
+                val lockControls = {
+                    controlsLocked = true
+                    showUnlockButton = true
+                    panel = PlayerPanel.None
+                    controlsVisible = false
+                    controlsInteractionToken++
+                }
                 Box(Modifier.fillMaxWidth().height(54.dp)) {
-                    GlassIconButton(
-                        backdrop,
-                        Icons.Default.ScreenRotation,
-                        "Rotate screen",
-                        modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
-                        onClick = {
-                            manualRotation = true
-                            val targetOrientation = if (isLandscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                            activity?.requestedOrientation = targetOrientation
-                            controlsInteractionToken++
-                        }
-                    )
+                    if (isLandscape) {
+                        // In landscape, rotation stays at the far left.
+                        GlassIconButton(
+                            backdrop,
+                            Icons.Default.ScreenRotation,
+                            "Rotate screen",
+                            modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
+                            onClick = rotateScreen
+                        )
+                    } else {
+                        // In portrait, swap the edge and center-leading positions of lock/rotation.
+                        GlassIconButton(
+                            backdrop,
+                            Icons.Default.Lock,
+                            "Lock controls",
+                            modifier = Modifier.align(Alignment.CenterStart).size(width = 48.dp, height = 44.dp),
+                            onClick = lockControls
+                        )
+                    }
+
                     Row(
                         Modifier.align(Alignment.Center),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 10.dp else 8.dp)
                     ) {
+                        if (isLandscape) {
+                            GlassIconButton(
+                                backdrop,
+                                Icons.Default.Lock,
+                                "Lock controls",
+                                modifier = Modifier.size(width = 68.dp, height = 44.dp),
+                                onClick = lockControls
+                            )
+                        } else {
+                            GlassIconButton(
+                                backdrop,
+                                Icons.Default.ScreenRotation,
+                                "Rotate screen",
+                                modifier = Modifier.size(width = 46.dp, height = 44.dp),
+                                onClick = rotateScreen
+                            )
+                        }
                         GlassIconButton(
                             backdrop, Icons.Default.SkipPrevious, "Previous video",
                             modifier = Modifier.size(width = if (isLandscape) 68.dp else 46.dp, height = 44.dp),
@@ -687,16 +736,20 @@ fun VideoPlayerScreen(
                     }
                 }
             }
-        }
 
-        if (controlsLocked && !isInPictureInPictureMode) {
+        if (controlsLocked && showUnlockButton && !isInPictureInPictureMode) {
             Box(Modifier.align(Alignment.CenterStart).padding(start = 24.dp)) {
                 GlassIconButton(
                     backdrop,
                     Icons.Default.LockOpen,
                     "Unlock controls",
-                    modifier = Modifier.size(width = 68.dp, height = 48.dp),
-                    onClick = { controlsLocked = false; controlsVisible = true; controlsInteractionToken++ }
+                    modifier = Modifier.size(width = 48.dp, height = 44.dp),
+                    onClick = {
+                        controlsLocked = false
+                        showUnlockButton = false
+                        controlsVisible = true
+                        controlsInteractionToken++
+                    }
                 )
             }
         }
@@ -965,45 +1018,47 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val thumbSize = 26.dp
+    // A horizontal capsule thumb (wider than it is tall).
+    val thumbWidth = 30.dp
+    val thumbHeight = 16.dp
     val density = LocalDensity.current
-    val thumbDiameterPx = with(density) { thumbSize.toPx() }
+    val thumbWidthPx = with(density) { thumbWidth.toPx() }
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
     BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
-        val thumbTravel = (maxWidth - thumbSize).coerceAtLeast(0.dp)
+        val thumbTravel = (maxWidth - thumbWidth).coerceAtLeast(0.dp)
 
         Canvas(
             Modifier.fillMaxSize()
-                .pointerInput(durationMs, thumbDiameterPx) {
+                .pointerInput(durationMs, thumbWidthPx) {
                     detectTapGestures { point ->
-                        val usableWidth = (size.width - thumbDiameterPx).coerceAtLeast(1f)
-                        val fraction = ((point.x - thumbDiameterPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                        val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
+                        val fraction = ((point.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                         onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
                     }
                 }
-                .pointerInput(durationMs, thumbDiameterPx) {
+                .pointerInput(durationMs, thumbWidthPx) {
                     detectDragGestures(
                         onDragStart = { point ->
-                            val usableWidth = (size.width - thumbDiameterPx).coerceAtLeast(1f)
-                            val fraction = ((point.x - thumbDiameterPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                            val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
+                            val fraction = ((point.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                             onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
                         },
                         onDrag = { change, _ ->
-                            val usableWidth = (size.width - thumbDiameterPx).coerceAtLeast(1f)
-                            val fraction = ((change.position.x - thumbDiameterPx / 2f) / usableWidth).coerceIn(0f, 1f)
+                            val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
+                            val fraction = ((change.position.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
                             onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
                             change.consume()
                         }
                     )
                 }
         ) {
-            val radius = thumbDiameterPx / 2f
+            val radius = thumbWidthPx / 2f
             val startX = 0f
             val endX = size.width
-            val thumbCenterX = radius + (size.width - thumbDiameterPx).coerceAtLeast(0f) * progress
+            val thumbCenterX = radius + (size.width - thumbWidthPx).coerceAtLeast(0f) * progress
             val centerY = size.height / 2f
             val stroke = 5.dp.toPx()
             drawLine(
@@ -1025,14 +1080,17 @@ private fun LiquidSeekBar(
         Box(
             Modifier.align(Alignment.CenterStart)
                 .offset(x = thumbTravel * progress)
-                .size(thumbSize)
+                .size(width = thumbWidth, height = thumbHeight)
                 .drawBackdrop(
                     backdrop = backdrop,
-                    shape = { CircleShape },
+                    shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         vibrancy()
                         lens(
-                            refractionHeight = 10.dp.toPx(),
+                            refractionHeight = minOf(
+                                8.dp.toPx(),
+                                (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
+                            ),
                             refractionAmount = 14.dp.toPx(),
                             depthEffect = true,
                             chromaticAberration = false
