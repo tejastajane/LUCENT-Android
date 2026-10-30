@@ -1199,9 +1199,7 @@ private fun LiquidSeekBar(
                 Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(Capsule())
-                    .background(Color.White.copy(alpha = 0.30f))
+                    .height(36.dp)
                     .pointerInput(durationMs, trackWidthPx, isLtr) {
                         detectTapGestures { point ->
                             val fraction = (point.x / trackWidthPx).coerceIn(0f, 1f)
@@ -1209,8 +1207,17 @@ private fun LiquidSeekBar(
                             dampedDragAnimation.animateToValue(target)
                             latestOnSeek.value((target * latestDuration.value).toLong().coerceAtLeast(0L))
                         }
-                    }
-            )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(Capsule())
+                        .background(Color.White.copy(alpha = 0.30f))
+                )
+            }
             Box(
                 Modifier
                     .align(if (isLtr) Alignment.CenterStart else Alignment.CenterEnd)
