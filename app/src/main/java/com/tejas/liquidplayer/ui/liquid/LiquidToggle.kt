@@ -150,8 +150,7 @@ fun LiquidToggle(
                 .semantics { role = Role.Switch }
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
-                    // Use this toggle's own captured track as the glass sample.
-                    // Do not combine with the Settings parent backdrop.
+                    // Combine the isolated Settings underlay with this toggle's own track sample.
                     backdrop = rememberCombinedBackdrop(
                         backdrop,
                         rememberBackdrop(trackBackdrop) { drawBackdrop ->
