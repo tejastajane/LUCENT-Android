@@ -45,7 +45,7 @@ jobs:
         run: |
           mkdir -p app/build/distributions
           cp app/build/outputs/apk/production/debug/app-production-debug.apk app/build/distributions/lucent.apk
-          sha256sum app/build/distributions/lucent.apk > app/build/distributions/lucent.apk.sha256
+          (cd app/build/distributions && sha256sum lucent.apk > lucent.apk.sha256)
 
       - name: Upload LUCENT APK
         if: success()
