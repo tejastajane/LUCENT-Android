@@ -49,9 +49,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ArrowBack
@@ -69,6 +67,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -100,6 +99,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -379,6 +379,14 @@ private fun SettingsScreen(
     onRescan: () -> Unit,
     onChooseVideoFile: () -> Unit
 ) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    var infoDialog by remember { mutableStateOf<SettingsInfoPage?>(null) }
+    val appVersion = remember(context) {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "Unknown"
+        }.getOrDefault("Unknown")
+    }
     // A settings-only backdrop source containing the page underlay, not its controls.
     // This provides a safe external glass sample without capturing the toggles themselves.
     val toggleBackdrop = rememberLayerBackdrop()
@@ -421,7 +429,12 @@ private fun SettingsScreen(
             }
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 18.dp,
+                    bottom = 148.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -482,51 +495,74 @@ private fun SettingsScreen(
                 }
                 item {
                     SettingsActionSection(
-                        "Player features",
-                        listOf(
-                            ActionItem(
-                                Icons.Default.Audiotrack,
-                                "Audio tracks",
-                                "Choose an audio language while playing",
-                                {}
-                            ),
-                            ActionItem(
-                                Icons.Default.ClosedCaption,
-                                "Subtitles",
-                                "Embedded and external subtitle tracks",
-                                {}
-                            )
-                        )
-                    )
-                }
-                item {
-                    SettingsActionSection(
                         "About & support",
                         listOf(
                             ActionItem(
                                 Icons.Default.Info,
                                 "About Liquid Player",
-                                "Kotlin · Jetpack Compose · libVLC",
-                                {}
+                                "Version $appVersion · Local video playback",
+                                { infoDialog = SettingsInfoPage.About }
                             ),
                             ActionItem(
                                 Icons.Default.Favorite,
                                 "Designed around Liquid Glass",
-                                "Neutral transparent glass, no blue tint",
-                                {}
+                                "Kyant0 Backdrop · Blur, refraction and highlights",
+                                { infoDialog = SettingsInfoPage.LiquidGlass }
                             ),
                             ActionItem(
                                 Icons.Default.Bookmark,
                                 "Project source",
-                                "Open the Liquid Player GitHub repository",
-                                {}
+                                "Browse the source code on GitHub",
+                                {
+                                    runCatching {
+                                        uriHandler.openUri("https://github.com/tejastajane/LiquidPlayer-Android")
+                                    }.onFailure {
+                                        infoDialog = SettingsInfoPage.ProjectLinkUnavailable
+                                    }
+                                }
                             )
                         )
                     )
                 }
             }
         }
+        infoDialog?.let { page ->
+            val (title, message) = when (page) {
+                SettingsInfoPage.About -> "About Liquid Player" to
+                    "Liquid Player is an Android video player for media stored on your device. " +
+                    "It discovers videos through Android's media library and can also open individual files. " +
+                    "Playback and audio/subtitle decoding are handled by libVLC. " +
+                    "Playback progress and per-video audio/subtitle preferences are saved locally.\n\n" +
+                    "Version $appVersion"
+                SettingsInfoPage.LiquidGlass -> "Liquid Glass design" to
+                    "The interface uses Kyant0 Backdrop (version 2.0.1) for real backdrop blur, lens refraction, " +
+                    "highlights and shadows in Jetpack Compose. The glass surfaces use neutral white, grey and " +
+                    "black tones rather than a blue-tinted material."
+                SettingsInfoPage.ProjectLinkUnavailable -> "Project source" to
+                    "The project page could not be opened automatically. Visit: " +
+                    "https://github.com/tejastajane/LiquidPlayer-Android"
+            }
+            AlertDialog(
+                onDismissRequest = { infoDialog = null },
+                title = { Text(title) },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = { infoDialog = null }) {
+                        Text("Done")
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
+}
+
+private enum class SettingsInfoPage {
+    About,
+    LiquidGlass,
+    ProjectLinkUnavailable
 }
 
 private data class SettingItem(
