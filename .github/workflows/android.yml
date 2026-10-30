@@ -63,7 +63,7 @@ jobs:
             -t 8 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
             -movflags +faststart liquidplayer-smoke.mp4
 
-      - name: Run libVLC playback smoke test on Android emulator
+      - name: Run real-app UI and libVLC smoke tests on Android emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -80,7 +80,13 @@ jobs:
             adb push liquidplayer-smoke.mp4 /data/local/tmp/liquidplayer-smoke.mp4
             adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" mkdir -p cache
             adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
-            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest
+            mkdir -p app/build/reports/androidTests/connected
+            if ! gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest; then
+              # Preserve native and framework crash traces as downloadable CI artifacts.
+              adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/logcat-crash.txt || true
+              adb logcat -d -b main -v threadtime -s AndroidRuntime:E libc:F LiquidPlayer:E > app/build/reports/androidTests/connected/logcat-errors.txt || true
+              exit 1
+            fi
 
       - name: Upload Android test results
         if: always()
