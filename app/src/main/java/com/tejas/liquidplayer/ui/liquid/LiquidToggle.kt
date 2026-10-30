@@ -23,6 +23,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -122,6 +125,7 @@ fun LiquidToggle(
 
         Box(
             Modifier
+                .semantics { role = Role.Switch }
                 .graphicsLayer {
                     val progress = dampedDragAnimation.value
                     val padding = 2.dp.toPx()
