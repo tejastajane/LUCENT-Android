@@ -146,7 +146,6 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import com.kyant.shapes.Capsule
 import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
 import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
@@ -1220,7 +1219,7 @@ private fun LiquidSeekBar(
                     Modifier
                         .fillMaxWidth()
                         .height(5.dp)
-                        .clip(Capsule())
+                        .clip(RoundedCornerShape(50.dp))
                         .background(Color.White.copy(alpha = 0.30f))
                 )
             }
@@ -1251,7 +1250,7 @@ private fun LiquidSeekBar(
                                 scale(scaleX, scaleY) { drawBackdrop() }
                             }
                         ),
-                        shape = { Capsule() },
+                        shape = { RoundedCornerShape(50.dp) },
                         effects = {
                             val press = dampedDragAnimation.pressProgress
                             val idleRefractionHeight = minOf(
