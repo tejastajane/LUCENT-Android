@@ -644,21 +644,7 @@ private fun BottomNavigation(
                 collapseProgress = collapseProgress,
                 activeContent = { index ->
                     val (icon, label) = navItems[index.coerceIn(0, navItems.lastIndex)]
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = label,
-                        tint = activeIconColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                    Text(
-                        label,
-                        color = activeLabelColor,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        maxLines = 1
-                    )
+                    Icon(imageVector = icon, contentDescription = label, tint = activeIconColor, modifier = Modifier.size(26.dp))
                 },
                 onCollapsedClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -680,16 +666,14 @@ private fun BottomNavigation(
                             imageVector = icon,
                             contentDescription = label,
                             tint = inactiveIconColor,
-                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = if (selectedTab == index) 0f else 1f - collapseProgress }
+                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
                         )
                         Text(
                             label,
                             color = if (selectedTab == index) activeLabelColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             maxLines = 1,
-                            modifier = Modifier.graphicsLayer {
-                                alpha = if (selectedTab == index) 0f else 1f - collapseProgress
-                            }
+                            modifier = Modifier.graphicsLayer { alpha = 1f - collapseProgress }
                         )
                     }
                 }

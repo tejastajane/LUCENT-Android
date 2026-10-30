@@ -6,9 +6,7 @@ package com.tejas.liquidplayer.ui.liquid
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,6 +47,7 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
@@ -213,15 +212,12 @@ fun LiquidBottomTabs(
                 Modifier
                     .clearAndSetSemantics {}
                     .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
                     .graphicsLayer {
                         translationX = panelOffset
                     }
                     .drawBackdrop(
                         backdrop = backdrop,
-                        // Export the first glass pass as the tab-local backdrop. Capturing
-                        // this Row with layerBackdrop would capture a drawBackdrop that
-                        // samples the same parent backdrop, creating a RenderNode cycle.
-                        exportedBackdrop = tabsBackdrop,
                         shape = { RoundedCornerShape(50) },
                         effects = {
                             val progress = dampedDragAnimation.pressProgress
@@ -336,10 +332,9 @@ fun LiquidBottomTabs(
                     Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapse },
                     contentAlignment = Alignment.TopCenter
                 ) {
-                    Column(
-                        Modifier.padding(top = lerp(11f, 15f, collapse).dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    Box(
+                        Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         activeContent(activeIndex)
                     }

@@ -1143,17 +1143,18 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Match Kyant0's reference capsule dimensions and press elevation.
-    val thumbWidth = 40.dp
-    val thumbHeight = 24.dp
-    val density = LocalDensity.current
-    val thumbWidthPx = with(density) { thumbWidth.toPx() }
+    // Keep the capsule footprint from main: 30 × 16 dp.
+    // Kyant0's damped spring temporarily lifts/scales the capsule while pressed.
+    val thumbWidth = 30.dp
+    val thumbHeight = 16.dp
+    val thumbWidthPx = with(LocalDensity.current) { thumbWidth.toPx() }
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
     val latestProgress = rememberUpdatedState(progress)
     val latestDuration = rememberUpdatedState(durationMs)
     val latestOnSeek = rememberUpdatedState(onSeek)
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
     var didDrag by remember { mutableStateOf(false) }
@@ -1210,18 +1211,18 @@ private fun LiquidSeekBar(
             -thumbWidthPx / 4f,
             trackWidthPx - thumbWidthPx * 3f / 4f
         )
-        // The filled track ends exactly where the capsule begins (its trailing/tail edge).
+        // Stop the filled segment at the capsule's trailing edge, not beneath its centre.
         val progressWidthPx = thumbTranslationX.coerceIn(0f, trackWidthPx)
 
+        // One centred track: the dim remainder and bright elapsed segment share one baseline.
         Box(Modifier.fillMaxSize().layerBackdrop(trackBackdrop)) {
-            Box(
+            Canvas(
                 Modifier
-                    .fillMaxWidth()
-                    .height(36.dp)
+                    .fillMaxSize()
                     .pointerInput(animationScope, durationMs, trackWidthPx, isLtr) {
-                        detectTapGestures { position ->
-                            val delta = (position.x / trackWidthPx).coerceIn(0f, 1f)
-                            val target = if (isLtr) delta else 1f - delta
+                        detectTapGestures { point ->
+                            val fraction = (point.x / trackWidthPx).coerceIn(0f, 1f)
+                            val target = if (isLtr) fraction else 1f - fraction
                             dampedDragAnimation.animateToValue(target)
                             latestOnSeek.value(
                                 (target * latestDuration.value).toLong().coerceAtLeast(0L)
@@ -1229,33 +1230,28 @@ private fun LiquidSeekBar(
                         }
                     }
             ) {
-                Box(
-                    Modifier
-                        .align(Alignment.Center)
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(50.dp))
-                        .background(Color.White.copy(alpha = 0.30f))
+                val centerY = size.height / 2f
+                val stroke = 5.dp.toPx()
+                val startX = if (isLtr) 0f else size.width
+                val endX = if (isLtr) size.width else 0f
+                drawLine(
+                    color = Color.White.copy(alpha = 0.30f),
+                    start = androidx.compose.ui.geometry.Offset(startX, centerY),
+                    end = androidx.compose.ui.geometry.Offset(endX, centerY),
+                    strokeWidth = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-
-                Box(
-                    Modifier
-                        .layout { measurable, constraints ->
-                            val width = progressWidthPx.toInt().coerceIn(0, constraints.maxWidth)
-                            val placeable = measurable.measure(
-                                constraints.copy(minWidth = width, maxWidth = width)
-                            )
-                            layout(constraints.maxWidth, placeable.height) {
-                                placeable.place(
-                                    if (isLtr) 0 else constraints.maxWidth - width,
-                                    0
-                                )
-                            }
-                        }
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(50.dp))
-                        .background(Color.White.copy(alpha = 0.88f))
+                val progressEndX = if (isLtr) {
+                    progressWidthPx
+                } else {
+                    size.width - progressWidthPx
+                }
+                drawLine(
+                    color = Color.White.copy(alpha = 0.88f),
+                    start = androidx.compose.ui.geometry.Offset(startX, centerY),
+                    end = androidx.compose.ui.geometry.Offset(progressEndX, centerY),
+                    strokeWidth = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
             }
         }
@@ -1279,31 +1275,40 @@ private fun LiquidSeekBar(
                     shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         val press = dampedDragAnimation.pressProgress
+                        vibrancy()
                         blur(8.dp.toPx() * (1f - press))
                         lens(
-                            10.dp.toPx() * press,
-                            14.dp.toPx() * press,
+                            refractionHeight = minOf(
+                                24.dp.toPx(),
+                                (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
+                            ),
+                            refractionAmount = 24.dp.toPx(),
                             depthEffect = true,
                             chromaticAberration = false
                         )
                     },
                     highlight = {
-                        val press = dampedDragAnimation.pressProgress
-                        Highlight.Ambient.copy(
-                            width = Highlight.Ambient.width / 1.5f,
-                            blurRadius = Highlight.Ambient.blurRadius / 1.5f,
-                            alpha = press
+                        Highlight.Plain.copy(
+                            width = 1.1.dp,
+                            blurRadius = 1.25.dp,
+                            alpha = 0.9f
                         )
                     },
                     shadow = {
                         Shadow(
-                            radius = 4.dp,
-                            color = Color.Black.copy(alpha = 0.05f)
+                            radius = 14.dp,
+                            offset = DpOffset(0.dp, 2.dp),
+                            color = Color.Black.copy(alpha = 0.42f),
+                            alpha = 0.95f
                         )
                     },
                     innerShadow = {
-                        val press = dampedDragAnimation.pressProgress
-                        InnerShadow(radius = 4.dp * press, alpha = press)
+                        InnerShadow(
+                            radius = 2.dp,
+                            offset = DpOffset(0.dp, (-0.75).dp),
+                            color = Color.White.copy(alpha = 0.14f),
+                            alpha = 0.85f
+                        )
                     },
                     layerBlock = {
                         scaleX = dampedDragAnimation.scaleX
@@ -1313,8 +1318,13 @@ private fun LiquidSeekBar(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
-                        val press = dampedDragAnimation.pressProgress
-                        drawRect(Color.White.copy(alpha = 1f - press))
+                        // Match GlassIconButton's navMaterial surface paint exactly.
+                        val surface = if (isLightTheme) {
+                            Color.Black.copy(alpha = 0.04f)
+                        } else {
+                            Color.White.copy(alpha = 0.055f)
+                        }
+                        drawRect(surface)
                     }
                 )
                 .size(width = thumbWidth, height = thumbHeight)
