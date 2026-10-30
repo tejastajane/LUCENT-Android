@@ -1285,36 +1285,44 @@ private fun SeekGestureIndicator(
     val isRewind = direction < 0
     Box(modifier) {
         Canvas(Modifier.fillMaxSize()) {
-            val edgeWidth = size.width * 0.38f
+            // The shade is an oversized elliptical lobe. Its curved edge starts
+            // inset from the top, reaches its maximum inward bulge at mid-height,
+            // then returns to an inset point at the bottom. The outer area is shaded.
+            val edgeInset = size.width * 0.24f
+            val midInset = size.width * 0.39f
+            val topCurveControl = size.width * 0.33f
             val shadePath = Path().apply {
                 if (isRewind) {
-                    // One continuous elliptical boundary: broad in the middle and
-                    // tangent to the screen edges at the top and bottom.
                     moveTo(0f, 0f)
+                    lineTo(edgeInset, 0f)
                     cubicTo(
-                        edgeWidth * 0.70f, 0f,
-                        edgeWidth, size.height * 0.22f,
-                        edgeWidth, size.height * 0.50f
+                        topCurveControl, 0f,
+                        midInset, size.height * 0.22f,
+                        midInset, size.height * 0.50f
                     )
                     cubicTo(
-                        edgeWidth, size.height * 0.78f,
-                        edgeWidth * 0.70f, size.height,
-                        0f, size.height
+                        midInset, size.height * 0.78f,
+                        topCurveControl, size.height,
+                        edgeInset, size.height
                     )
+                    lineTo(0f, size.height)
+                    close()
                 } else {
                     moveTo(size.width, 0f)
+                    lineTo(size.width - edgeInset, 0f)
                     cubicTo(
-                        size.width - edgeWidth * 0.70f, 0f,
-                        size.width - edgeWidth, size.height * 0.22f,
-                        size.width - edgeWidth, size.height * 0.50f
+                        size.width - topCurveControl, 0f,
+                        size.width - midInset, size.height * 0.22f,
+                        size.width - midInset, size.height * 0.50f
                     )
                     cubicTo(
-                        size.width - edgeWidth, size.height * 0.78f,
-                        size.width - edgeWidth * 0.70f, size.height,
-                        size.width, size.height
+                        size.width - midInset, size.height * 0.78f,
+                        size.width - topCurveControl, size.height,
+                        size.width - edgeInset, size.height
                     )
+                    lineTo(size.width, size.height)
+                    close()
                 }
-                close()
             }
             val shadeBrush = if (isRewind) {
                 Brush.horizontalGradient(
