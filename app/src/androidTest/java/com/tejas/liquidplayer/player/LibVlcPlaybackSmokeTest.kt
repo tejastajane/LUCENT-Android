@@ -14,7 +14,6 @@ import org.videolan.libvlc.MediaPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -24,8 +23,7 @@ class LibVlcPlaybackSmokeTest {
     @Test
     fun mediaStoreContentUriOpensAndPlaybackTimeAdvances() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val fixture = File(context.cacheDir, "liquidplayer-smoke.mp4")
-        assertTrue("Smoke-test MP4 wasn't copied into app cache", fixture.exists() && fixture.length() > 0L)
+        val fixture = SmokeTestFixture.copyIntoAppCache(context)
 
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "liquidplayer-smoke.mp4")
