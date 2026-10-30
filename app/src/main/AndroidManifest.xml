@@ -6,7 +6,9 @@
 
     <application
         android:allowBackup="true"
-        android:label="Liquid Player"
+        android:label="LUCENT"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.LiquidPlayer"
         android:usesCleartextTraffic="false">
