@@ -382,7 +382,17 @@ private fun SettingsScreen(
     onRescan: () -> Unit,
     onChooseVideoFile: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize()) {
+    // A settings-only backdrop source containing just the page underlay, not its controls.
+    // This gives the toggles a safe external glass sample without sampling themselves.
+    val toggleBackdrop = rememberLayerBackdrop()
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .layerBackdrop(toggleBackdrop)
+                .background(MaterialTheme.colorScheme.background)
+        )
+        Column(Modifier.fillMaxSize()) {
         Text("Settings", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 14.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -400,12 +410,12 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                SettingsSection("Appearance", listOf(
+                SettingsSection(toggleBackdrop, "Appearance", listOf(
                     SettingItem(Icons.Default.Settings, "Dark theme", "Use the black AMOLED appearance", isDarkTheme, onThemeChanged)
                 ))
             }
             item {
-                SettingsSection("Playback settings", listOf(
+                SettingsSection(toggleBackdrop, "Playback settings", listOf(
                     SettingItem(Icons.Default.Tune, "Hardware acceleration", "Use libVLC's hardware video decoder", hardwareAcceleration, onHardwareAccelerationChanged),
                     SettingItem(Icons.Default.Settings, "Playback gestures", "Enable double-tap seeking and touch shortcuts", gesturesEnabled, onGesturesEnabledChanged)
                 ))
@@ -439,6 +449,7 @@ private fun SettingsScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -458,7 +469,7 @@ private data class ActionItem(
 )
 
 @Composable
-private fun SettingsSection(title: String, items: List<SettingItem>) {
+private fun SettingsSection(backdrop: Backdrop, title: String, items: List<SettingItem>) {
     val dividerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f)
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
@@ -474,7 +485,8 @@ private fun SettingsSection(title: String, items: List<SettingItem>) {
                         }
                         LiquidToggle(
                             checked = item.checked,
-                            onCheckedChange = item.onCheckedChange
+                            onCheckedChange = item.onCheckedChange,
+                            backdrop = backdrop
                         )
                     }
                     if (index != items.lastIndex) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 50.dp, end = 14.dp).height(0.5.dp)) {

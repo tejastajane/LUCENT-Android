@@ -31,8 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import androidx.compose.material3.MaterialTheme
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -47,14 +49,14 @@ import kotlinx.coroutines.flow.collectLatest
 /**
  * Kyant0-style damped liquid toggle, adapted to the app's neutral materials.
  *
- * The thumb samples only this toggle's isolated track backdrop. It deliberately
- * does not sample the Settings page's parent backdrop, which previously caused
- * recursive RenderNode capture on the Settings screen.
+ * The thumb combines a dedicated Settings underlay with this toggle's isolated
+ * track backdrop. It never samples the Settings content tree or its own thumb.
  */
 @Composable
 fun LiquidToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -150,12 +152,15 @@ fun LiquidToggle(
                 .drawBackdrop(
                     // Use this toggle's own captured track as the glass sample.
                     // Do not combine with the Settings parent backdrop.
-                    backdrop = rememberBackdrop(trackBackdrop) { drawBackdrop ->
-                        val progress = dampedDragAnimation.pressProgress
-                        val scaleX = lerp(2f / 3f, 0.75f, progress)
-                        val scaleY = lerp(0f, 0.75f, progress)
-                        scale(scaleX, scaleY) { drawBackdrop() }
-                    },
+                    backdrop = rememberCombinedBackdrop(
+                        backdrop,
+                        rememberBackdrop(trackBackdrop) { drawBackdrop ->
+                            val progress = dampedDragAnimation.pressProgress
+                            val scaleX = lerp(2f / 3f, 0.75f, progress)
+                            val scaleY = lerp(0f, 0.75f, progress)
+                            scale(scaleX, scaleY) { drawBackdrop() }
+                        }
+                    ),
                     shape = { Capsule() },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
