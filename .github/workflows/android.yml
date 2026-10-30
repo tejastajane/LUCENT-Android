@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -40,12 +40,21 @@ jobs:
       - name: Build production APK and isolated CI test APK
         run: gradle --no-daemon --stacktrace :app:assembleProductionDebug :app:assembleCiDebug
 
-      - name: Upload debug APK
+      - name: Prepare APK with stable filename
+        if: success()
+        run: |
+          mkdir -p app/build/distributions
+          cp app/build/outputs/apk/production/debug/app-production-debug.apk app/build/distributions/lucent.apk
+          sha256sum app/build/distributions/lucent.apk > app/build/distributions/lucent.apk.sha256
+
+      - name: Upload LUCENT APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: liquid-player-debug-apk
-          path: app/build/outputs/apk/production/debug/app-production-debug.apk
+          name: lucent-apk
+          path: |
+            app/build/distributions/lucent.apk
+            app/build/distributions/lucent.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -78,19 +87,40 @@ jobs:
             # The MP4 fixture is embedded in the test APK and copied into target app cache by test code.
             mkdir -p app/build/reports/androidTests/connected
             # Stage 1: run only the real Settings screen test.
-            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#settingsScreenComposesWithoutCrashing || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/settings-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/settings-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/liquid-player-settings.png || true; adb pull /sdcard/liquid-player-settings.png app/build/reports/androidTests/connected/settings-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/liquid-player-settings-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/liquid-player-settings-window.xml app/build/reports/androidTests/connected/settings-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/settings-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/settings-windows.txt 2>&1 || true; exit 1; }
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#settingsScreenComposesWithoutCrashing || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/settings-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/settings-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/lucent-settings.png || true; adb pull /sdcard/lucent-settings.png app/build/reports/androidTests/connected/settings-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/lucent-settings-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/lucent-settings-window.xml app/build/reports/androidTests/connected/settings-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/settings-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/settings-windows.txt 2>&1 || true; exit 1; }
             # Stage 2: only after Settings passes, open a MediaStore video in the actual player UI.
-            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#selectingVideoOpensRealPlayerScreenWithoutCrashing || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/player-ui-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/player-ui-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/liquid-player-player-ui.png || true; adb pull /sdcard/liquid-player-player-ui.png app/build/reports/androidTests/connected/player-ui-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/liquid-player-player-ui-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/liquid-player-player-ui-window.xml app/build/reports/androidTests/connected/player-ui-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/player-ui-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/player-ui-windows.txt 2>&1 || true; exit 1; }
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#selectingVideoOpensRealPlayerScreenWithoutCrashing || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/player-ui-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/player-ui-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/lucent-player-ui.png || true; adb pull /sdcard/lucent-player-ui.png app/build/reports/androidTests/connected/player-ui-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/lucent-player-ui-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/lucent-player-ui-window.xml app/build/reports/androidTests/connected/player-ui-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/player-ui-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/player-ui-windows.txt 2>&1 || true; exit 1; }
             # Stage 3: libVLC engine playback is deliberately last.
-            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.LibVlcPlaybackSmokeTest || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/libvlc-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/libvlc-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/liquid-player-libvlc.png || true; adb pull /sdcard/liquid-player-libvlc.png app/build/reports/androidTests/connected/libvlc-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/liquid-player-libvlc-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/liquid-player-libvlc-window.xml app/build/reports/androidTests/connected/libvlc-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/libvlc-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/libvlc-windows.txt 2>&1 || true; exit 1; }
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.LibVlcPlaybackSmokeTest || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/libvlc-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/libvlc-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/lucent-libvlc.png || true; adb pull /sdcard/lucent-libvlc.png app/build/reports/androidTests/connected/libvlc-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/lucent-libvlc-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/lucent-libvlc-window.xml app/build/reports/androidTests/connected/libvlc-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/libvlc-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/libvlc-windows.txt 2>&1 || true; exit 1; }
 
       - name: Upload Android test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: liquid-player-android-test-results
+          name: lucent-android-test-results
           path: |
             app/build/outputs/androidTest-results/connected/**
             app/build/reports/androidTests/connected/**
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Publish latest LUCENT APK release
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-${GITHUB_RUN_NUMBER}"
+          release_title="LUCENT build #${GITHUB_RUN_NUMBER}"
+          release_notes="Automated LUCENT Android debug/testing build.
+
+          Commit: ${GITHUB_SHA}
+          Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          This APK is intended for testing and is not a Play Store-signed release."
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" app/build/distributions/lucent.apk app/build/distributions/lucent.apk.sha256 --clobber
+            gh release edit "$tag" --title "$release_title" --notes "$release_notes" --latest
+          else
+            gh release create "$tag" app/build/distributions/lucent.apk app/build/distributions/lucent.apk.sha256 --title "$release_title" --notes "$release_notes" --latest --target "$GITHUB_SHA"
+          fi

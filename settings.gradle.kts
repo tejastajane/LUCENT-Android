@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LiquidPlayer"
+rootProject.name = "LUCENT"
 include(":app")
