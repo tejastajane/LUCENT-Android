@@ -47,7 +47,6 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
@@ -212,12 +211,15 @@ fun LiquidBottomTabs(
                 Modifier
                     .clearAndSetSemantics {}
                     .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
                     .graphicsLayer {
                         translationX = panelOffset
                     }
                     .drawBackdrop(
                         backdrop = backdrop,
+                        // Export the first glass pass as the tab-local backdrop. Capturing
+                        // this Row with layerBackdrop would capture a drawBackdrop that
+                        // samples the same parent backdrop, creating a RenderNode cycle.
+                        exportedBackdrop = tabsBackdrop,
                         shape = { RoundedCornerShape(50) },
                         effects = {
                             val progress = dampedDragAnimation.pressProgress
