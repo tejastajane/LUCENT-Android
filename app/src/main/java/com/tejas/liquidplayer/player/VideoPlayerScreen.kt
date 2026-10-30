@@ -1147,6 +1147,7 @@ private fun LiquidSeekBar(
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val latestProgress = rememberUpdatedState(progress)
     val latestDuration = rememberUpdatedState(durationMs)
     val latestOnSeek = rememberUpdatedState(onSeek)
@@ -1294,8 +1295,10 @@ private fun LiquidSeekBar(
                             scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                         },
                         onDrawSurface = {
+                            val idleSurfaceAlpha = if (isLightTheme) 0.04f else 0.055f
+                            val idleSurfaceColor = if (isLightTheme) Color.Black else Color.White
                             val press = dampedDragAnimation.pressProgress
-                            drawRect(Color.White.copy(alpha = 0.055f * (1f - press)))
+                            drawRect(idleSurfaceColor.copy(alpha = idleSurfaceAlpha * (1f - press)))
                             drawRect(Color.Black.copy(alpha = 0.018f * (1f - press)))
                         }
                     )
