@@ -344,7 +344,7 @@ fun LiquidBottomTabs(
         // Keep the selected SVG in its tab slot above the moving glass capsule.
         // The glass capsule has its own spring position and never owns the icon layer.
         if (activeContent != null) {
-            val activeIndex = selectedTabIndex.coerceIn(0, tabsCount - 1)
+            val activeIndex = currentIndex.coerceIn(0, tabsCount - 1)
             Row(
                 Modifier
                     .height(containerHeight)
