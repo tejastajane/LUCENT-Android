@@ -77,6 +77,8 @@ import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -115,7 +117,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.scale
@@ -252,6 +256,8 @@ fun VideoPlayerScreen(
     var verticalGestureZone by remember { mutableIntStateOf(0) }
     var controlsInteractionToken by remember { mutableIntStateOf(0) }
     var adjustmentMode by remember { mutableIntStateOf(0) }
+    var seekFeedbackDirection by remember { mutableIntStateOf(0) }
+    var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
     var showAspectRatioFeedback by remember { mutableStateOf(false) }
@@ -309,6 +315,12 @@ fun VideoPlayerScreen(
     }
     LaunchedEffect(adjustmentMode, brightness, volume) {
         if (adjustmentMode != 0) { delay(900L); adjustmentMode = 0 }
+    }
+    LaunchedEffect(seekFeedbackDirection, seekFeedbackToken) {
+        if (seekFeedbackDirection != 0) {
+            delay(750L)
+            seekFeedbackDirection = 0
+        }
     }
     LaunchedEffect(showAspectRatioFeedback) {
         if (showAspectRatioFeedback) { delay(1_200L); showAspectRatioFeedback = false }
@@ -659,9 +671,22 @@ fun VideoPlayerScreen(
                             }
                         },
                         onDoubleTap = if (gesturesEnabled && !controlsLocked) { offset ->
-                            when {
-                                offset.x < size.width * 0.30f -> controller.seekBy(-10_000L)
-                                offset.x > size.width * 0.70f -> controller.seekBy(10_000L)
+                            val direction = when {
+                                offset.x < size.width * 0.30f -> -1
+                                offset.x > size.width * 0.70f -> 1
+                                else -> 0
+                            }
+                            when (direction) {
+                                -1 -> {
+                                    controller.seekBy(-10_000L)
+                                    seekFeedbackDirection = -1
+                                    seekFeedbackToken++
+                                }
+                                1 -> {
+                                    controller.seekBy(10_000L)
+                                    seekFeedbackDirection = 1
+                                    seekFeedbackToken++
+                                }
                                 else -> controller.togglePlayPause()
                             }
                             controlsVisible = true
@@ -706,6 +731,13 @@ fun VideoPlayerScreen(
                 }
         )
 
+
+        if (seekFeedbackDirection != 0 && !isInPictureInPictureMode) {
+            SeekGestureIndicator(
+                direction = seekFeedbackDirection,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         if (adjustmentMode != 0 && !isInPictureInPictureMode) {
             Box(Modifier.align(if (adjustmentMode < 0) Alignment.CenterEnd else Alignment.CenterStart).padding(start = if (adjustmentMode > 0) 28.dp else 0.dp, end = if (adjustmentMode < 0) 28.dp else 0.dp)) {
@@ -1241,6 +1273,66 @@ private fun AspectRatioPanel(onSelect: (String, String?) -> Unit) {
             }
         }
         Text("Ratios are applied by libVLC. Original restores the source aspect ratio.", color = Color.Gray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
+    }
+}
+
+@Composable
+private fun SeekGestureIndicator(
+    direction: Int,
+    modifier: Modifier = Modifier
+) {
+    val isRewind = direction < 0
+    Box(modifier) {
+        Canvas(Modifier.fillMaxSize()) {
+            val edgeWidth = size.width * 0.38f
+            val shadePath = Path().apply {
+                if (isRewind) {
+                    moveTo(0f, 0f)
+                    lineTo(edgeWidth * 0.38f, 0f)
+                    cubicTo(edgeWidth * 0.76f, size.height * 0.20f, edgeWidth, size.height * 0.38f, edgeWidth, size.height * 0.50f)
+                    cubicTo(edgeWidth, size.height * 0.62f, edgeWidth * 0.76f, size.height * 0.80f, edgeWidth * 0.38f, size.height)
+                    lineTo(0f, size.height)
+                } else {
+                    moveTo(size.width, 0f)
+                    lineTo(size.width - edgeWidth * 0.38f, 0f)
+                    cubicTo(size.width - edgeWidth * 0.76f, size.height * 0.20f, size.width - edgeWidth, size.height * 0.38f, size.width - edgeWidth, size.height * 0.50f)
+                    cubicTo(size.width - edgeWidth, size.height * 0.62f, size.width - edgeWidth * 0.76f, size.height * 0.80f, size.width - edgeWidth * 0.38f, size.height)
+                    lineTo(size.width, size.height)
+                }
+                close()
+            }
+            val shadeBrush = if (isRewind) {
+                Brush.horizontalGradient(
+                    colors = listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.20f), Color.Transparent),
+                    startX = 0f,
+                    endX = size.width * 0.44f
+                )
+            } else {
+                Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.20f), Color.Black.copy(alpha = 0.30f)),
+                    startX = size.width * 0.56f,
+                    endX = size.width
+                )
+            }
+            drawPath(shadePath, shadeBrush)
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.30f)
+                .fillMaxHeight()
+                .align(if (isRewind) Alignment.CenterStart else Alignment.CenterEnd),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = if (isRewind) Icons.Default.FastRewind else Icons.Default.FastForward,
+                contentDescription = if (isRewind) "Rewind 10 seconds" else "Forward 10 seconds",
+                tint = Color.White,
+                modifier = Modifier.size(27.dp)
+            )
+            Text("10s", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 
