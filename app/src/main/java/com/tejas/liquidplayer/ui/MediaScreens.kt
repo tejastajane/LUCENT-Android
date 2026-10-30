@@ -77,8 +77,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -113,6 +111,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tejas.liquidplayer.ui.liquid.LiquidBottomTab
 import com.tejas.liquidplayer.ui.liquid.LiquidBottomTabs
+import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import kotlinx.coroutines.Dispatchers
@@ -255,7 +254,7 @@ private fun VideosScreen(
             listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
         val isNonMovieFolder = pathSegments.any { nonMovieFolderPattern.matches(it) }
         val matchesCategory = when (category) {
-            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder
+            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder && item.durationMs >= 90L * 60L * 1_000L
             "TV Shows" -> looksLikeTvEpisode
             "Anime" -> isAnime
             "Recent" -> true
@@ -475,15 +474,10 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
                             Text(item.title)
                             Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = item.checked,
                             onCheckedChange = item.onCheckedChange,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.background,
-                                checkedTrackColor = MaterialTheme.colorScheme.onBackground,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                uncheckedTrackColor = Color.DarkGray
-                            )
+                            backdrop = backdrop
                         )
                     }
                     if (index != items.lastIndex) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 50.dp, end = 14.dp).height(0.5.dp)) {
@@ -675,7 +669,7 @@ private fun BottomNavigation(
                             imageVector = icon,
                             contentDescription = label,
                             tint = inactiveIconColor,
-                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
+                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = if (selectedTab == index) 0f else 1f - collapseProgress }
                         )
                         Text(
                             label,
