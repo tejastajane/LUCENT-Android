@@ -689,7 +689,8 @@ fun VideoPlayerScreen(
                                 }
                                 else -> controller.togglePlayPause()
                             }
-                            controlsVisible = true
+                            // Seeking must not force the transport controls on screen.
+                            // Keep their current visibility exactly as it was before the double tap.
                             panel = PlayerPanel.None
                         } else null
                     )
@@ -1287,17 +1288,31 @@ private fun SeekGestureIndicator(
             val edgeWidth = size.width * 0.38f
             val shadePath = Path().apply {
                 if (isRewind) {
+                    // One continuous elliptical boundary: broad in the middle and
+                    // tangent to the screen edges at the top and bottom.
                     moveTo(0f, 0f)
-                    lineTo(edgeWidth * 0.38f, 0f)
-                    cubicTo(edgeWidth * 0.76f, size.height * 0.20f, edgeWidth, size.height * 0.38f, edgeWidth, size.height * 0.50f)
-                    cubicTo(edgeWidth, size.height * 0.62f, edgeWidth * 0.76f, size.height * 0.80f, edgeWidth * 0.38f, size.height)
-                    lineTo(0f, size.height)
+                    cubicTo(
+                        edgeWidth * 0.70f, 0f,
+                        edgeWidth, size.height * 0.22f,
+                        edgeWidth, size.height * 0.50f
+                    )
+                    cubicTo(
+                        edgeWidth, size.height * 0.78f,
+                        edgeWidth * 0.70f, size.height,
+                        0f, size.height
+                    )
                 } else {
                     moveTo(size.width, 0f)
-                    lineTo(size.width - edgeWidth * 0.38f, 0f)
-                    cubicTo(size.width - edgeWidth * 0.76f, size.height * 0.20f, size.width - edgeWidth, size.height * 0.38f, size.width - edgeWidth, size.height * 0.50f)
-                    cubicTo(size.width - edgeWidth, size.height * 0.62f, size.width - edgeWidth * 0.76f, size.height * 0.80f, size.width - edgeWidth * 0.38f, size.height)
-                    lineTo(size.width, size.height)
+                    cubicTo(
+                        size.width - edgeWidth * 0.70f, 0f,
+                        size.width - edgeWidth, size.height * 0.22f,
+                        size.width - edgeWidth, size.height * 0.50f
+                    )
+                    cubicTo(
+                        size.width - edgeWidth, size.height * 0.78f,
+                        size.width - edgeWidth * 0.70f, size.height,
+                        size.width, size.height
+                    )
                 }
                 close()
             }
