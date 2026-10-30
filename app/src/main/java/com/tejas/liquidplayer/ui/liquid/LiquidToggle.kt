@@ -32,10 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import androidx.compose.material3.MaterialTheme
-import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -54,7 +52,6 @@ import kotlinx.coroutines.flow.collectLatest
 fun LiquidToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -138,15 +135,12 @@ fun LiquidToggle(
                 }
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(
-                        backdrop,
-                        rememberBackdrop(trackBackdrop) { drawBackdrop ->
-                            val progress = dampedDragAnimation.pressProgress
-                            val scaleX = lerp(2f / 3f, 0.75f, progress)
-                            val scaleY = lerp(0f, 0.75f, progress)
-                            scale(scaleX, scaleY) { drawBackdrop() }
-                        }
-                    ),
+                    backdrop = rememberBackdrop(trackBackdrop) { drawBackdrop ->
+                        val progress = dampedDragAnimation.pressProgress
+                        val scaleX = lerp(2f / 3f, 0.75f, progress)
+                        val scaleY = lerp(0f, 0.75f, progress)
+                        scale(scaleX, scaleY) { drawBackdrop() }
+                    },
                     shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress

@@ -6,7 +6,9 @@ package com.tejas.liquidplayer.ui.liquid
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -334,9 +336,10 @@ fun LiquidBottomTabs(
                     Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapse },
                     contentAlignment = Alignment.TopCenter
                 ) {
-                    Box(
-                        Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        Modifier.padding(top = lerp(11f, 15f, collapse).dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
                         activeContent(activeIndex)
                     }
