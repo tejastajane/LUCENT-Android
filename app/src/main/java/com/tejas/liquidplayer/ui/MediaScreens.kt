@@ -686,7 +686,6 @@ private fun BottomNavigation(
     val active = navItems[selectedTab.coerceIn(0, navItems.lastIndex)]
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val activeIconColor = if (isLightTheme) Color(0xFF0A84FF) else Color.White
-    val activeLabelColor = activeIconColor
     val inactiveIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BoxWithConstraints(
@@ -760,7 +759,7 @@ private fun BottomNavigation(
                         )
                         Text(
                             label,
-                            color = if (selectedTab == index) activeLabelColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (selectedTab == index) activeIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             maxLines = 1,
                             modifier = Modifier.graphicsLayer { alpha = 1f - collapseProgress }
