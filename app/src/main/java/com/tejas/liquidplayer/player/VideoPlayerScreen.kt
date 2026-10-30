@@ -918,7 +918,11 @@ fun VideoPlayerScreen(
                     indication = null,
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 ) { panel = PlayerPanel.None },
-                contentAlignment = if (isLandscape) Alignment.CenterEnd else Alignment.BottomCenter
+                contentAlignment = when {
+                    isLandscape -> Alignment.CenterEnd
+                    panel == PlayerPanel.AspectRatio -> Alignment.BottomCenter
+                    else -> Alignment.TopCenter
+                }
             ) {
                 GlassSurface(
                     backdrop,
