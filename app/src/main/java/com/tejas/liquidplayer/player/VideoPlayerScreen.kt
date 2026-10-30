@@ -2,17 +2,21 @@ package com.tejas.liquidplayer.player
 
 import android.graphics.Bitmap
 import android.view.TextureView
+import android.view.ViewTreeObserver
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.isActive
 import android.os.SystemClock
+import android.text.format.Formatter
 import kotlin.math.roundToInt
 
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
+import android.content.ClipData
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -100,34 +104,49 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.fastRoundToInt
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+import com.kyant.shapes.Capsule
+import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
 import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
@@ -135,13 +154,14 @@ import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.GlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
-private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed }
+private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed, Bookmarks, Information }
 
 @Composable
 fun VideoPlayerScreen(
@@ -1011,7 +1031,8 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // A horizontal capsule thumb (wider than it is tall).
+    // Keep the existing thumb's footprint; Kyant0's damped press/refraction morph is
+    // applied inside that same 30 × 16 dp capsule rather than growing the control.
     val thumbWidth = 30.dp
     val thumbHeight = 16.dp
     val density = LocalDensity.current
@@ -1019,104 +1040,155 @@ private fun LiquidSeekBar(
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val latestProgress = rememberUpdatedState(progress)
+    val latestDuration = rememberUpdatedState(durationMs)
+    val latestOnSeek = rememberUpdatedState(onSeek)
+    val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+    val animationScope = rememberCoroutineScope()
+    var isDragging by remember { mutableStateOf(false) }
+    val trackBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
-        val thumbTravel = (maxWidth - thumbWidth).coerceAtLeast(0.dp)
+        val trackWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val thumbTravelPx = (trackWidthPx - thumbWidthPx).coerceAtLeast(0f)
 
-        Canvas(
-            Modifier.fillMaxSize()
-                .pointerInput(durationMs, thumbWidthPx) {
-                    detectTapGestures { point ->
-                        val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
-                        val fraction = ((point.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                        onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
+        val dampedDragAnimation = remember(animationScope, durationMs, trackWidthPx) {
+            DampedDragAnimation(
+                animationScope = animationScope,
+                initialValue = progress,
+                valueRange = 0f..1f,
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 1f,
+                onDragStarted = { isDragging = true },
+                onDragStopped = {
+                    isDragging = false
+                    latestOnSeek.value((targetValue * latestDuration.value).toLong().coerceAtLeast(0L))
+                },
+                onDrag = { _, dragAmount ->
+                    val delta = dragAmount.x / trackWidthPx
+                    val next = if (isLtr) {
+                        (targetValue + delta).fastCoerceIn(0f, 1f)
+                    } else {
+                        (targetValue - delta).fastCoerceIn(0f, 1f)
                     }
+                    latestOnSeek.value((next * latestDuration.value).toLong().coerceAtLeast(0L))
                 }
-                .pointerInput(durationMs, thumbWidthPx) {
-                    detectDragGestures(
-                        onDragStart = { point ->
-                            val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
-                            val fraction = ((point.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                            onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                        },
-                        onDrag = { change, _ ->
-                            val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
-                            val fraction = ((change.position.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                            onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                            change.consume()
-                        }
-                    )
-                }
-        ) {
-            val radius = thumbWidthPx / 2f
-            val startX = 0f
-            val endX = size.width
-            val thumbCenterX = radius + (size.width - thumbWidthPx).coerceAtLeast(0f) * progress
-            val centerY = size.height / 2f
-            val stroke = 5.dp.toPx()
-            drawLine(
-                color = Color.White.copy(alpha = 0.34f),
-                start = Offset(startX, centerY),
-                end = Offset(endX, centerY),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = Color.White,
-                start = Offset(startX, centerY),
-                end = Offset(thumbCenterX, centerY),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
             )
         }
 
+        LaunchedEffect(dampedDragAnimation) {
+            snapshotFlow { latestProgress.value }.collectLatest { latest ->
+                if (dampedDragAnimation.targetValue != latest) {
+                    dampedDragAnimation.updateValue(latest)
+                }
+            }
+        }
+
         Box(
-            Modifier.align(Alignment.CenterStart)
-                .offset(x = thumbTravel * progress)
-                .size(width = thumbWidth, height = thumbHeight)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RoundedCornerShape(50.dp) },
-                    effects = {
-                        vibrancy()
-                        lens(
-                            refractionHeight = minOf(
-                                8.dp.toPx(),
-                                (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
-                            ),
-                            refractionAmount = 14.dp.toPx(),
-                            depthEffect = true,
-                            chromaticAberration = false
-                        )
-                    },
-                    highlight = {
-                        Highlight.Default.copy(
-                            width = 1.2.dp,
-                            blurRadius = 1.4.dp,
-                            alpha = 0.85f
-                        )
-                    },
-                    shadow = {
-                        Shadow(
-                            radius = 5.dp,
-                            offset = DpOffset(0.dp, 1.dp),
-                            color = Color.Black.copy(alpha = 0.28f),
-                            alpha = 0.7f
-                        )
-                    },
-                    innerShadow = {
-                        InnerShadow(
-                            radius = 2.dp,
-                            offset = DpOffset(0.dp, (-0.5).dp),
-                            color = Color.White.copy(alpha = 0.22f),
-                            alpha = 0.8f
-                        )
-                    },
-                    onDrawSurface = {
-                        drawRect(Color.White.copy(alpha = 0.07f))
-                        drawRect(Color.Black.copy(alpha = 0.08f))
+            Modifier
+                .fillMaxSize()
+                .layerBackdrop(trackBackdrop)
+        ) {
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .height(5.dp)
+                    .clip(Capsule())
+                    .background(Color.White.copy(alpha = 0.30f))
+                    .pointerInput(durationMs, trackWidthPx, isLtr) {
+                        detectTapGestures { point ->
+                            val fraction = (point.x / trackWidthPx).coerceIn(0f, 1f)
+                            val target = if (isLtr) fraction else 1f - fraction
+                            dampedDragAnimation.animateToValue(target)
+                            latestOnSeek.value((target * latestDuration.value).toLong().coerceAtLeast(0L))
+                        }
                     }
-                )
-        )
+            )
+            Box(
+                Modifier
+                    .align(if (isLtr) Alignment.CenterStart else Alignment.CenterEnd)
+                    .fillMaxWidth(dampedDragAnimation.progress.fastCoerceIn(0f, 1f))
+                    .height(5.dp)
+                    .clip(Capsule())
+                    .background(Color.White.copy(alpha = 0.88f))
+            )
+
+            val thumbOffsetPx = (thumbTravelPx * dampedDragAnimation.progress).fastCoerceIn(0f, thumbTravelPx)
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .graphicsLayer {
+                        translationX = if (isLtr) thumbOffsetPx else thumbTravelPx - thumbOffsetPx
+                    }
+                    .then(dampedDragAnimation.modifier)
+                    .drawBackdrop(
+                        backdrop = rememberCombinedBackdrop(
+                            backdrop,
+                            rememberBackdrop(trackBackdrop) { drawBackdrop ->
+                                val press = dampedDragAnimation.pressProgress
+                                val scaleX = androidx.compose.ui.util.lerp(2f / 3f, 1f, press)
+                                val scaleY = androidx.compose.ui.util.lerp(0f, 1f, press)
+                                scale(scaleX, scaleY) { drawBackdrop() }
+                            }
+                        ),
+                        shape = { Capsule() },
+                        effects = {
+                            val press = dampedDragAnimation.pressProgress
+                            val idleRefractionHeight = minOf(
+                                24.dp.toPx(),
+                                (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
+                            )
+                            vibrancy()
+                            blur(8.dp.toPx() * (1f - press))
+                            lens(
+                                refractionHeight = androidx.compose.ui.util.lerp(idleRefractionHeight, 14.dp.toPx(), press),
+                                refractionAmount = androidx.compose.ui.util.lerp(24.dp.toPx(), 14.dp.toPx(), press),
+                                depthEffect = true,
+                                chromaticAberration = false
+                            )
+                        },
+                        highlight = {
+                            val press = dampedDragAnimation.pressProgress
+                            Highlight.Default.copy(
+                                width = 1.2.dp,
+                                blurRadius = 1.4.dp,
+                                alpha = 0.78f + 0.17f * press
+                            )
+                        },
+                        shadow = {
+                            Shadow(
+                                radius = 14.dp,
+                                offset = DpOffset(0.dp, 2.dp),
+                                color = Color.Black.copy(alpha = 0.42f),
+                                alpha = 0.75f
+                            )
+                        },
+                        innerShadow = {
+                            InnerShadow(
+                                radius = 2.dp,
+                                offset = DpOffset(0.dp, (-0.75).dp),
+                                color = Color.White.copy(alpha = 0.14f),
+                                alpha = 0.85f
+                            )
+                        },
+                        layerBlock = {
+                            // The spring remains active, but layout dimensions stay fixed at 30 × 16 dp.
+                            scaleX = dampedDragAnimation.scaleX
+                            scaleY = dampedDragAnimation.scaleY
+                            val velocity = dampedDragAnimation.velocity / 10f
+                            scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                            scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        },
+                        onDrawSurface = {
+                            val press = dampedDragAnimation.pressProgress
+                            drawRect(Color.White.copy(alpha = 0.055f * (1f - press)))
+                            drawRect(Color.Black.copy(alpha = 0.018f * (1f - press)))
+                        }
+                    )
+                    .size(width = thumbWidth, height = thumbHeight)
+            )
+        }
     }
 }
