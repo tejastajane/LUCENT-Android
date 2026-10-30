@@ -1263,10 +1263,10 @@ private fun LiquidSeekBar(
                         },
                         highlight = {
                             val press = dampedDragAnimation.pressProgress
-                            Highlight.Default.copy(
-                                width = 1.2.dp,
-                                blurRadius = 1.4.dp,
-                                alpha = 0.78f + 0.17f * press
+                            Highlight.Plain.copy(
+                                width = 1.1.dp,
+                                blurRadius = 1.25.dp,
+                                alpha = 0.9f
                             )
                         },
                         shadow = {
@@ -1274,7 +1274,7 @@ private fun LiquidSeekBar(
                                 radius = 14.dp,
                                 offset = DpOffset(0.dp, 2.dp),
                                 color = Color.Black.copy(alpha = 0.42f),
-                                alpha = 0.75f
+                                alpha = 0.95f
                             )
                         },
                         innerShadow = {
