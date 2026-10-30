@@ -6,13 +6,13 @@
 <p align="center">
   <a href="https://github.com/tejastajane/LiquidPlayer-Android/releases/latest/download/lucent.apk"><strong>Download latest APK</strong></a>
   ·
-  <a href="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml">Build &amp; playback tests</a>
+  <a href="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml">Build workflow</a>
   ·
   <a href="https://github.com/tejastajane/LiquidPlayer-Android/issues">Report an issue</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml"><img alt="Android build and playback test" src="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml"><img alt="LUCENT APK build" src="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml/badge.svg?branch=main"></a>
   <img alt="Platform: Android" src="https://img.shields.io/badge/platform-Android-3DDC84">
   <img alt="Language: Kotlin" src="https://img.shields.io/badge/language-Kotlin-7F52FF">
   <img alt="UI: Jetpack Compose" src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4">
@@ -27,7 +27,7 @@ LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combine
 
 **[Download lucent.apk](https://github.com/tejastajane/LiquidPlayer-Android/releases/latest/download/lucent.apk)**
 
-The link always points to the APK attached to the latest successful main-branch release. A release is published by GitHub Actions only after the build, Android UI smoke tests, and libVLC playback smoke test complete successfully.
+The link always points to the APK attached to the latest successful main-branch build. GitHub Actions publishes a new release after the production APK is built successfully.
 
 To install, download the APK on your Android device and open it. Android may ask you to allow installation from the browser or file manager you used.
 
@@ -91,7 +91,7 @@ The application ID is intentionally retained across the LUCENT rebrand so existi
 | Liquid Glass effects | Kyant0 Backdrop |
 | Device media library | Android MediaStore |
 | File and subtitle picking | Storage Access Framework |
-| Build and validation | GitHub Actions, Gradle, Android Emulator |
+| Build and distribution | GitHub Actions, Gradle, GitHub Releases |
 
 ## Build from source
 
@@ -110,20 +110,19 @@ The local APK is written to:
 app/build/outputs/apk/production/debug/app-production-debug.apk
 ```
 
-The CI workflow also builds an isolated CI-flavour APK and Android instrumentation test APK.
+GitHub Actions builds the production-flavour APK and packages it as `lucent.apk`.
 
-## Automated validation
+## Automated APK builds
 
 The GitHub Actions workflow:
-1. Builds the production APK and isolated CI test target.
-2. Creates a short local video fixture for instrumentation tests.
-3. Builds the Android instrumentation test APK.
-4. Runs a real Settings-screen smoke test.
-5. Opens a MediaStore video in the player UI.
-6. Runs a libVLC playback smoke test and verifies playback time advances.
-7. Publishes the latest `lucent.apk` release asset after all checks pass on `main`.
+1. Builds the production-flavour debug APK.
+2. Renames the output to `lucent.apk` and generates a SHA-256 checksum.
+3. Uploads the APK and checksum as a workflow artifact.
+4. Publishes a GitHub Release with the same files after a successful build on `main`.
 
-See [Build & playback tests](https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml) for run history and logs.
+Pull requests and implementation branches build and upload the APK artifact. Only successful builds on `main` update the permanent latest-download link.
+
+See [Build workflow](https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml) for build history and logs.
 
 ## Design direction
 
