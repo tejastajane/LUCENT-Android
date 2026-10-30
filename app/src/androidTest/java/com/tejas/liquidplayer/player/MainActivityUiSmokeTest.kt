@@ -30,28 +30,8 @@ class MainActivityUiSmokeTest {
     private var testVideoUri: Uri? = null
 
     @Before
-    fun launchRealAppWithTestVideo() {
+    fun prepareDevice() {
         device = UiDevice.getInstance(instrumentation)
-
-        // The CI emulator uses API 30; grant the legacy video-read permission before
-        // MainActivity reads MediaStore so the fixture appears in the Videos tab.
-        device.executeShellCommand(
-            "pm grant ${context.packageName} android.permission.READ_EXTERNAL_STORAGE"
-        )
-
-        testVideoUri = insertFixtureIntoMediaStore()
-
-        val launchIntent = requireNotNull(
-            context.packageManager.getLaunchIntentForPackage(context.packageName)
-        ) { "CI app package has no launcher Activity" }.apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        }
-        context.startActivity(launchIntent)
-        device.waitForIdle(15_000L)
-        assertNotNull(
-            "Liquid Player Videos screen title did not appear after launching MainActivity",
-            device.wait(Until.findObject(By.text("Videos")), TimeUnit.SECONDS.toMillis(20))
-        )
     }
 
     @After
@@ -64,6 +44,8 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun settingsScreenComposesWithoutCrashing() {
+        launchRealAppWithTestVideo()
+
         val settingsTab = device.wait(
             Until.findObject(By.desc("Settings")),
             TimeUnit.SECONDS.toMillis(20)
@@ -87,6 +69,8 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun selectingVideoOpensRealPlayerScreenWithoutCrashing() {
+        launchRealAppWithTestVideo()
+
         // MainActivity launches with the Videos page selected. Use the visible media
         // row directly instead of depending on the selected tab's accessibility label.
         val videoRow = device.wait(
@@ -121,6 +105,28 @@ class MainActivityUiSmokeTest {
             "Player Activity disappeared after opening the video",
             device.hasObject(By.desc("Back"))
         )
+    }
+
+    /**
+     * Every test launches its own real MainActivity. No test depends on a prior screen,
+     * selected tab, or successful accessibility lookup from another test.
+     */
+    private fun launchRealAppWithTestVideo() {
+        // The CI emulator uses API 30; grant the legacy video-read permission before
+        // MainActivity reads MediaStore so the fixture appears in the Videos tab.
+        device.executeShellCommand(
+            "pm grant ${context.packageName} android.permission.READ_EXTERNAL_STORAGE"
+        )
+        testVideoUri = insertFixtureIntoMediaStore()
+
+        val launchIntent = requireNotNull(
+            context.packageManager.getLaunchIntentForPackage(context.packageName)
+        ) { "CI app package has no launcher Activity" }.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        context.startActivity(launchIntent)
+        // Let Activity startup settle. The test itself waits for the control it needs.
+        Thread.sleep(1_500L)
     }
 
     private fun insertFixtureIntoMediaStore(): Uri {
