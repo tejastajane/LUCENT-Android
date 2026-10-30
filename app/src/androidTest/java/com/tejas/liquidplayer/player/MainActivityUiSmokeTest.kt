@@ -15,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -130,11 +129,7 @@ class MainActivityUiSmokeTest {
     }
 
     private fun insertFixtureIntoMediaStore(): Uri {
-        val fixture = File(context.cacheDir, "liquidplayer-smoke.mp4")
-        assertTrue(
-            "Workflow did not copy liquidplayer-smoke.mp4 into the app cache",
-            fixture.exists() && fixture.length() > 0L
-        )
+        val fixture = SmokeTestFixture.copyIntoAppCache(context)
 
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, TEST_VIDEO_NAME)
