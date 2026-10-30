@@ -1047,7 +1047,12 @@ private fun ToolsPanel(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = action).padding(horizontal = 8.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(
+                    icon,
+                    null,
+                    tint = if (isFavourite && label == "Remove from favourites") Color(0xFFFF453A) else Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
                 Spacer(Modifier.width(12.dp))
                 Text(label, Modifier.weight(1f), color = Color.White)
                 Text("›", color = Color.Gray, fontSize = 24.sp)
