@@ -48,9 +48,10 @@ class MainActivityUiSmokeTest {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
         context.startActivity(launchIntent)
-        assertTrue(
-            "Liquid Player launcher Activity did not become idle",
-            device.waitForIdle(15_000L)
+        device.waitForIdle(15_000L)
+        assertNotNull(
+            "Liquid Player Videos screen did not appear after launching MainActivity",
+            device.wait(Until.findObject(By.desc("Videos")), TimeUnit.SECONDS.toMillis(15))
         )
     }
 
