@@ -42,7 +42,6 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import com.kyant.shapes.Capsule
 import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
 import kotlinx.coroutines.flow.collectLatest
 
@@ -129,7 +128,7 @@ fun LiquidToggle(
         Box(
             Modifier
                 .layerBackdrop(trackBackdrop)
-                .clip(Capsule())
+                .clip(RoundedCornerShape(50.dp))
                 .drawBehind {
                     drawRect(lerp(trackColor, accentColor, dampedDragAnimation.value))
                 }
@@ -160,7 +159,7 @@ fun LiquidToggle(
                             scale(scaleX, scaleY) { drawBackdrop() }
                         }
                     ),
-                    shape = { Capsule() },
+                    shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
                         blur(8.dp.toPx() * (1f - progress))
