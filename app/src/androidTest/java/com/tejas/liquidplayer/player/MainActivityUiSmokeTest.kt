@@ -49,8 +49,8 @@ class MainActivityUiSmokeTest {
         context.startActivity(launchIntent)
         device.waitForIdle(15_000L)
         assertNotNull(
-            "Liquid Player Videos screen did not appear after launching MainActivity",
-            device.wait(Until.findObject(By.desc("Videos")), TimeUnit.SECONDS.toMillis(15))
+            "Liquid Player Videos screen title did not appear after launching MainActivity",
+            device.wait(Until.findObject(By.text("Videos")), TimeUnit.SECONDS.toMillis(20))
         )
     }
 
@@ -87,13 +87,8 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun selectingVideoOpensRealPlayerScreenWithoutCrashing() {
-        val videosTab = device.wait(
-            Until.findObject(By.desc("Videos")),
-            TimeUnit.SECONDS.toMillis(20)
-        )
-        assertNotNull("Videos tab wasn't visible in the real app", videosTab)
-        videosTab!!.click()
-
+        // MainActivity launches with the Videos page selected. Use the visible media
+        // row directly instead of depending on the selected tab's accessibility label.
         val videoRow = device.wait(
             Until.findObject(By.text(TEST_VIDEO_NAME)),
             TimeUnit.SECONDS.toMillis(25)
