@@ -1309,8 +1309,10 @@ private fun LiquidSeekBar(
                         scaleX = dampedDragAnimation.scaleX
                         scaleY = dampedDragAnimation.scaleY
                         val velocity = dampedDragAnimation.velocity / 10f
-                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleX = (scaleX / (1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)))
+                            .coerceAtMost(1.5f)
+                        scaleY = (scaleY * (1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)))
+                            .coerceAtMost(1.5f)
                     },
                     onDrawSurface = {
                         // Same neutral surface paint as GlassSurface(navMaterial = true).
