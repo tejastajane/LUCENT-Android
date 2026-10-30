@@ -270,9 +270,6 @@ private fun VideosScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { category = if (category == "All") "Recent" else "All" }) {
-                Icon(Icons.Default.Tune, contentDescription = "Sort videos", tint = MaterialTheme.colorScheme.onBackground)
-            }
         }
         if (!selectedFolder.isNullOrBlank()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -689,7 +686,6 @@ private fun BottomNavigation(
     val active = navItems[selectedTab.coerceIn(0, navItems.lastIndex)]
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val activeIconColor = if (isLightTheme) Color(0xFF0A84FF) else Color.White
-    val activeLabelColor = if (isLightTheme) Color(0xFF1D1D1F) else Color.White
     val inactiveIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BoxWithConstraints(
@@ -737,6 +733,14 @@ private fun BottomNavigation(
                     val (icon, label) = navItems[index.coerceIn(0, navItems.lastIndex)]
                     Icon(imageVector = icon, contentDescription = label, tint = activeIconColor, modifier = Modifier.size(26.dp))
                 },
+                activeLabelContent = { index ->
+                    Text(
+                        text = navItems[index.coerceIn(0, navItems.lastIndex)].second,
+                        color = activeIconColor,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        maxLines = 1
+                    )
+                },
                 onCollapsedClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onSearchQueryChange("")
@@ -763,10 +767,12 @@ private fun BottomNavigation(
                         )
                         Text(
                             label,
-                            color = if (selectedTab == index) activeLabelColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (selectedTab == index) activeIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             maxLines = 1,
-                            modifier = Modifier.graphicsLayer { alpha = 1f - collapseProgress }
+                            modifier = Modifier.graphicsLayer {
+                                alpha = if (selectedTab == index) 0f else 1f - collapseProgress
+                            }
                         )
                     }
                 }

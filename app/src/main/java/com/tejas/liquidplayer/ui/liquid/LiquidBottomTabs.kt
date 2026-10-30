@@ -6,13 +6,16 @@ package com.tejas.liquidplayer.ui.liquid
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
@@ -77,6 +80,7 @@ fun LiquidBottomTabs(
     onCollapsedClick: (() -> Unit)? = null,
     collapsedContent: (@Composable () -> Unit)? = null,
     activeContent: (@Composable (Int) -> Unit)? = null,
+    activeLabelContent: (@Composable (Int) -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -326,20 +330,6 @@ fun LiquidBottomTabs(
                 .height(selectedPillHeight)
                 .width(selectedPillWidth)
         ) {
-            if (activeContent != null) {
-                val activeIndex = dampedDragAnimation.value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
-                Box(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapse },
-                    contentAlignment = Alignment.TopCenter
-                ) {
-                    Box(
-                        Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        activeContent(activeIndex)
-                    }
-                }
-            }
             if (collapsedContent != null) {
                 Box(
                     Modifier.fillMaxSize()
@@ -355,5 +345,41 @@ fun LiquidBottomTabs(
                 }
             }
         }
+        // Keep the selected SVG and label in the tab slot above the moving glass capsule.
+        // Both foreground elements stay independent of the refracting pill underneath.
+        if (activeContent != null || activeLabelContent != null) {
+            val activeIndex = currentIndex.coerceIn(0, tabsCount - 1)
+            Row(
+                Modifier
+                    .height(containerHeight)
+                    .fillMaxWidth()
+                    .padding(4f.dp)
+                    .graphicsLayer { alpha = 1f - collapse },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(tabsCount) { index ->
+                    Box(
+                        Modifier.weight(1f).fillMaxHeight(),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        if (index == activeIndex) {
+                            Column(
+                                Modifier.padding(top = lerp(12f, 18f, collapse).dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2f.dp)
+                            ) {
+                                if (activeContent != null) {
+                                    Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                                        activeContent(activeIndex)
+                                    }
+                                }
+                                activeLabelContent?.invoke(activeIndex)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
     }
 }
