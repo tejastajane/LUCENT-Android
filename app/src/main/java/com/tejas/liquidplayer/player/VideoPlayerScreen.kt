@@ -1211,9 +1211,7 @@ private fun LiquidSeekBar(
             trackWidthPx - thumbWidthPx * 3f / 4f
         )
         // The filled track ends exactly where the capsule begins (its trailing/tail edge).
-        val progressWidthPx = (
-            if (isLtr) thumbTranslationX else -thumbTranslationX
-        ).coerceIn(0f, trackWidthPx)
+        val progressWidthPx = thumbTranslationX.coerceIn(0f, trackWidthPx)
 
         Box(Modifier.fillMaxSize().layerBackdrop(trackBackdrop)) {
             Box(
