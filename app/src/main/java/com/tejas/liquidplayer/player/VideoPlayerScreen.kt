@@ -2,17 +2,22 @@ package com.tejas.liquidplayer.player
 
 import android.graphics.Bitmap
 import android.view.TextureView
+import android.view.ViewTreeObserver
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.isActive
 import android.os.SystemClock
+import android.text.format.Formatter
 import kotlin.math.roundToInt
 
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
+import android.content.ClipData
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -68,6 +73,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -100,22 +106,32 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.fastRoundToInt
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
@@ -124,10 +140,12 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
 import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
@@ -135,13 +153,14 @@ import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.GlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
-private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed }
+private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed, Bookmarks, Information }
 
 @Composable
 fun VideoPlayerScreen(
@@ -158,6 +177,19 @@ fun VideoPlayerScreen(
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
+    val favouriteKey = remember(video.uri) { "favourite_${video.uri.toString().hashCode()}" }
+    var isFavourite by remember(video.uri, playerPreferences) {
+        mutableStateOf(playerPreferences.getBoolean(favouriteKey, false))
+    }
+    val bookmarksKey = remember(video.uri) { "bookmarks_${video.uri.toString().hashCode()}" }
+    var bookmarksMs by remember(video.uri, playerPreferences) {
+        mutableStateOf(
+            playerPreferences.getStringSet(bookmarksKey, emptySet())
+                ?.mapNotNull { it.toLongOrNull() }
+                ?.toSet()
+                ?: emptySet()
+        )
+    }
     val savedPositionMs = remember(video.uri, playerPreferences) { playerPreferences.getLong(progressKey, 0L) }
     val backdrop = rememberLayerBackdrop()
     val retryScope = rememberCoroutineScope()
@@ -207,6 +239,14 @@ fun VideoPlayerScreen(
             playerPreferences.edit().putLong(progressKey, storedPosition).apply()
         }
     }
+
+    fun persistBookmarks(updated: Set<Long>) {
+        bookmarksMs = updated.toSortedSet()
+        playerPreferences.edit()
+            .putStringSet(bookmarksKey, bookmarksMs.map { it.toString() }.toSet())
+            .apply()
+    }
+
 
     BackHandler(enabled = !isInPictureInPictureMode) {
         if (controlsLocked) {
@@ -266,12 +306,27 @@ fun VideoPlayerScreen(
 
     DisposableEffect(activity, controller) {
         val originalOrientation = activity?.requestedOrientation
+        val decorView = activity?.window?.decorView
         val windowController = activity?.let {
             WindowInsetsControllerCompat(it.window, it.window.decorView)
         }
-        windowController?.hide(WindowInsetsCompat.Type.systemBars())
+        windowController?.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        // Hide after attachment and whenever the shade/notification panel returns focus.
+        decorView?.post { windowController?.hide(WindowInsetsCompat.Type.systemBars()) }
+        val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) {
+                decorView?.post { windowController?.hide(WindowInsetsCompat.Type.systemBars()) }
+            }
+        }
+        if (decorView?.viewTreeObserver?.isAlive == true) {
+            decorView.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
+        }
         val originalBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
         onDispose {
+            if (decorView?.viewTreeObserver?.isAlive == true) {
+                decorView.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
+            }
             windowController?.show(WindowInsetsCompat.Type.systemBars())
             activity?.window?.let { window ->
                 val params = window.attributes
@@ -775,6 +830,8 @@ fun VideoPlayerScreen(
                                     PlayerPanel.Tools -> "Player tools"
                                     PlayerPanel.AspectRatio -> "Aspect ratio"
                                     PlayerPanel.Speed -> "Playback speed"
+                                    PlayerPanel.Bookmarks -> "Bookmarks"
+                                    PlayerPanel.Information -> "Information"
                                     PlayerPanel.None -> ""
                                 },
                                 style = MaterialTheme.typography.titleLarge,
@@ -834,9 +891,25 @@ fun VideoPlayerScreen(
                                 }
                             }
                             PlayerPanel.Tools -> ToolsPanel(
-                                onAudio = { panel = PlayerPanel.Audio },
-                                onSubtitles = { panel = PlayerPanel.Subtitles },
-                                onSpeed = { panel = PlayerPanel.Speed }
+                                isFavourite = isFavourite,
+                                onBookmarks = { panel = PlayerPanel.Bookmarks },
+                                onSpeed = { panel = PlayerPanel.Speed },
+                                onFavourite = {
+                                    isFavourite = !isFavourite
+                                    playerPreferences.edit().putBoolean(favouriteKey, isFavourite).apply()
+                                },
+                                onShare = {
+                                    runCatching {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = video.mimeType?.takeIf { it.contains("/") } ?: "video/*"
+                                            putExtra(Intent.EXTRA_STREAM, video.uri)
+                                            clipData = ClipData.newUri(context.contentResolver, video.name, video.uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share video"))
+                                    }
+                                },
+                                onInformation = { panel = PlayerPanel.Information }
                             )
                             PlayerPanel.AspectRatio -> AspectRatioPanel { label, ratio ->
                                 selectedAspectIndex = aspectRatios.indexOfFirst { it.first == label }.coerceAtLeast(0)
@@ -856,6 +929,58 @@ fun VideoPlayerScreen(
                                     ) {
                                         Text(if (rate == 1f) "Normal" else "$rate×", Modifier.weight(1f))
                                         if (speed == rate) Icon(Icons.Default.Check, null, tint = Color.White)
+                                    }
+                                }
+                            }
+                            PlayerPanel.Bookmarks -> {
+                                Button(
+                                    onClick = {
+                                        val current = runCatching { controller.player.time }
+                                            .getOrDefault(positionMs).coerceAtLeast(0L)
+                                        val alreadySaved = bookmarksMs.any { kotlin.math.abs(it - current) < 1_000L }
+                                        if (!alreadySaved) persistBookmarks(bookmarksMs + current)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Default.Bookmark, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Save current position")
+                                }
+                                if (bookmarksMs.isEmpty()) {
+                                    Text("No bookmarks for this video yet.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    bookmarksMs.sorted().forEach { bookmark ->
+                                        Row(
+                                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    controller.seekTo(bookmark)
+                                                    positionMs = bookmark
+                                                    panel = PlayerPanel.None
+                                                }
+                                                .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(formatDuration(bookmark), Modifier.weight(1f), color = Color.White)
+                                            IconButton(onClick = { persistBookmarks(bookmarksMs - bookmark) }) {
+                                                Icon(Icons.Default.Delete, "Delete bookmark", tint = Color.LightGray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            PlayerPanel.Information -> {
+                                val details = listOf(
+                                    "File name" to video.name,
+                                    "Folder" to video.relativePath.ifBlank { "Unknown" },
+                                    "Duration" to formatDuration(durationMs),
+                                    "File size" to if (video.sizeBytes > 0L) Formatter.formatFileSize(context, video.sizeBytes) else "Unknown",
+                                    "Format" to (video.mimeType ?: "Unknown")
+                                )
+                                details.forEach { (label, value) ->
+                                    Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
+                                        Text(label, color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                                        Text(value, color = Color.White, style = MaterialTheme.typography.bodyMedium)
                                     }
                                 }
                             }
@@ -900,19 +1025,19 @@ private fun TrackPanel(
 
 @Composable
 private fun ToolsPanel(
-    onAudio: () -> Unit,
-    onSubtitles: () -> Unit,
-    onSpeed: () -> Unit
+    isFavourite: Boolean,
+    onBookmarks: () -> Unit,
+    onSpeed: () -> Unit,
+    onFavourite: () -> Unit,
+    onShare: () -> Unit,
+    onInformation: () -> Unit
 ) {
     val tools = listOf(
-        Triple(Icons.Default.PlaylistAdd, "Playing queue", onSpeed),
-        Triple(Icons.Default.Bookmark, "Bookmark", {}),
-        Triple(Icons.Default.Audiotrack, "Audio tracks", onAudio),
-        Triple(Icons.Default.ClosedCaption, "Subtitles", onSubtitles),
+        Triple(Icons.Default.Bookmark, "Bookmarks", onBookmarks),
         Triple(Icons.Default.Speed, "Playback speed", onSpeed),
-        Triple(Icons.Default.Favorite, "Favourite", {}),
-        Triple(Icons.Default.Share, "Share", {}),
-        Triple(Icons.Default.Info, "Information", {})
+        Triple(Icons.Default.Favorite, if (isFavourite) "Remove from favourites" else "Favourite", onFavourite),
+        Triple(Icons.Default.Share, "Share", onShare),
+        Triple(Icons.Default.Info, "Information", onInformation)
     )
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         tools.forEach { (icon, label, action) ->
@@ -920,7 +1045,12 @@ private fun ToolsPanel(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = action).padding(horizontal = 8.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(
+                    icon,
+                    null,
+                    tint = if (isFavourite && label == "Remove from favourites") Color(0xFFFF453A) else Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
                 Spacer(Modifier.width(12.dp))
                 Text(label, Modifier.weight(1f), color = Color.White)
                 Text("›", color = Color.Gray, fontSize = 24.sp)
@@ -1011,112 +1141,188 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // A horizontal capsule thumb (wider than it is tall).
+    // Main-branch capsule dimensions and pointer-to-time mapping.
     val thumbWidth = 30.dp
     val thumbHeight = 16.dp
-    val density = LocalDensity.current
-    val thumbWidthPx = with(density) { thumbWidth.toPx() }
+    val thumbWidthPx = with(LocalDensity.current) { thumbWidth.toPx() }
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val latestProgress = rememberUpdatedState(progress)
+    val latestDuration = rememberUpdatedState(durationMs)
+    val latestOnSeek = rememberUpdatedState(onSeek)
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+    val animationScope = rememberCoroutineScope()
 
-    BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
-        val thumbTravel = (maxWidth - thumbWidth).coerceAtLeast(0.dp)
+    BoxWithConstraints(
+        modifier.fillMaxWidth().height(36.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        val trackWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val usableWidthPx = (trackWidthPx - thumbWidthPx).coerceAtLeast(1f)
+        val thumbTravelPx = usableWidthPx
 
-        Canvas(
-            Modifier.fillMaxSize()
-                .pointerInput(durationMs, thumbWidthPx) {
-                    detectTapGestures { point ->
-                        val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
-                        val fraction = ((point.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                        onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                    }
-                }
-                .pointerInput(durationMs, thumbWidthPx) {
-                    detectDragGestures(
-                        onDragStart = { point ->
-                            val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
-                            val fraction = ((point.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                            onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                        },
-                        onDrag = { change, _ ->
-                            val usableWidth = (size.width - thumbWidthPx).coerceAtLeast(1f)
-                            val fraction = ((change.position.x - thumbWidthPx / 2f) / usableWidth).coerceIn(0f, 1f)
-                            onSeek((durationMs * fraction).toLong().coerceAtLeast(0L))
-                            change.consume()
-                        }
-                    )
-                }
-        ) {
-            val radius = thumbWidthPx / 2f
-            val startX = 0f
-            val endX = size.width
-            val thumbCenterX = radius + (size.width - thumbWidthPx).coerceAtLeast(0f) * progress
-            val centerY = size.height / 2f
-            val stroke = 5.dp.toPx()
-            drawLine(
-                color = Color.White.copy(alpha = 0.34f),
-                start = Offset(startX, centerY),
-                end = Offset(endX, centerY),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = Color.White,
-                start = Offset(startX, centerY),
-                end = Offset(thumbCenterX, centerY),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
+        val dampedDragAnimation = remember(animationScope) {
+            DampedDragAnimation(
+                animationScope = animationScope,
+                initialValue = progress,
+                valueRange = 0f..1f,
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 1.5f,
+                onDragStarted = {},
+                onDragStopped = {},
+                onDrag = { _, _ -> }
             )
         }
 
+        LaunchedEffect(dampedDragAnimation) {
+            snapshotFlow { latestProgress.value }.collectLatest { latest ->
+                if (dampedDragAnimation.targetValue != latest) {
+                    dampedDragAnimation.updateValue(latest)
+                }
+            }
+        }
+
+        fun fractionAt(positionX: Float): Float {
+            val fraction = (
+                (positionX - thumbWidthPx / 2f) / usableWidthPx
+            ).coerceIn(0f, 1f)
+            return if (isLtr) fraction else 1f - fraction
+        }
+
+        val thumbOffsetPx = thumbTravelPx * dampedDragAnimation.progress
+        // Filled progress stops at the back/tail edge of the moving capsule.
+        val progressWidthPx = thumbOffsetPx.coerceIn(0f, trackWidthPx)
+
+        // The capsule samples the player frame backdrop directly. The progress stroke
+        // is deliberately not exported as a backdrop source, so it cannot refract inside the glass.
+        Box(Modifier.fillMaxSize()) {
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(dampedDragAnimation, durationMs, usableWidthPx, isLtr) {
+                        detectTapGestures { point ->
+                            val target = fractionAt(point.x)
+                            dampedDragAnimation.animateToValue(target)
+                            latestOnSeek.value(
+                                (target * latestDuration.value).toLong().coerceAtLeast(0L)
+                            )
+                        }
+                    }
+                    .pointerInput(dampedDragAnimation, durationMs, usableWidthPx, isLtr) {
+                        detectDragGestures(
+                            onDragStart = { point ->
+                                val target = fractionAt(point.x)
+                                dampedDragAnimation.press()
+                                dampedDragAnimation.updateValue(target)
+                                latestOnSeek.value(
+                                    (target * latestDuration.value).toLong().coerceAtLeast(0L)
+                                )
+                            },
+                            onDragEnd = { dampedDragAnimation.release() },
+                            onDragCancel = { dampedDragAnimation.release() },
+                            onDrag = { change, _ ->
+                                val target = fractionAt(change.position.x)
+                                dampedDragAnimation.updateValue(target)
+                                latestOnSeek.value(
+                                    (target * latestDuration.value).toLong().coerceAtLeast(0L)
+                                )
+                                change.consume()
+                            }
+                        )
+                    }
+            ) {
+                val centerY = size.height / 2f
+                val stroke = 5.dp.toPx()
+                val startX = if (isLtr) 0f else size.width
+                val endX = if (isLtr) size.width else 0f
+                drawLine(
+                    color = Color.White.copy(alpha = 0.30f),
+                    start = androidx.compose.ui.geometry.Offset(startX, centerY),
+                    end = androidx.compose.ui.geometry.Offset(endX, centerY),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                val progressEndX = if (isLtr) {
+                    progressWidthPx
+                } else {
+                    size.width - progressWidthPx
+                }
+                drawLine(
+                    color = Color.White.copy(alpha = 0.88f),
+                    start = androidx.compose.ui.geometry.Offset(startX, centerY),
+                    end = androidx.compose.ui.geometry.Offset(progressEndX, centerY),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+
         Box(
-            Modifier.align(Alignment.CenterStart)
-                .offset(x = thumbTravel * progress)
-                .size(width = thumbWidth, height = thumbHeight)
+            Modifier
+                .graphicsLayer {
+                    translationX = if (isLtr) thumbOffsetPx else -thumbOffsetPx
+                }
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RoundedCornerShape(50.dp) },
                     effects = {
+                        val press = dampedDragAnimation.pressProgress
                         vibrancy()
+                        blur(8.dp.toPx() * (1f - press))
                         lens(
                             refractionHeight = minOf(
-                                8.dp.toPx(),
+                                24.dp.toPx(),
                                 (size.height / 2f - 1.dp.toPx()).coerceAtLeast(0f)
                             ),
-                            refractionAmount = 14.dp.toPx(),
+                            refractionAmount = 24.dp.toPx(),
                             depthEffect = true,
                             chromaticAberration = false
                         )
                     },
                     highlight = {
-                        Highlight.Default.copy(
-                            width = 1.2.dp,
-                            blurRadius = 1.4.dp,
-                            alpha = 0.85f
+                        Highlight.Plain.copy(
+                            width = 1.1.dp,
+                            blurRadius = 1.25.dp,
+                            alpha = 0.9f
                         )
                     },
                     shadow = {
                         Shadow(
-                            radius = 5.dp,
-                            offset = DpOffset(0.dp, 1.dp),
-                            color = Color.Black.copy(alpha = 0.28f),
-                            alpha = 0.7f
+                            radius = 14.dp,
+                            offset = DpOffset(0.dp, 2.dp),
+                            color = Color.Black.copy(alpha = 0.42f),
+                            alpha = 0.95f
                         )
                     },
                     innerShadow = {
                         InnerShadow(
                             radius = 2.dp,
-                            offset = DpOffset(0.dp, (-0.5).dp),
-                            color = Color.White.copy(alpha = 0.22f),
-                            alpha = 0.8f
+                            offset = DpOffset(0.dp, (-0.75).dp),
+                            color = Color.White.copy(alpha = 0.14f),
+                            alpha = 0.85f
                         )
                     },
+                    layerBlock = {
+                        scaleX = dampedDragAnimation.scaleX
+                        scaleY = dampedDragAnimation.scaleY
+                        val velocity = dampedDragAnimation.velocity / 10f
+                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    },
                     onDrawSurface = {
-                        drawRect(Color.White.copy(alpha = 0.07f))
-                        drawRect(Color.Black.copy(alpha = 0.08f))
+                        // Same neutral surface paint as GlassSurface(navMaterial = true).
+                        val surface = if (isLightTheme) {
+                            Color.Black.copy(alpha = 0.04f)
+                        } else {
+                            Color.White.copy(alpha = 0.055f)
+                        }
+                        drawRect(surface)
                     }
                 )
+                .size(width = thumbWidth, height = thumbHeight)
         )
     }
 }

@@ -77,8 +77,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -113,6 +111,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tejas.liquidplayer.ui.liquid.LiquidBottomTab
 import com.tejas.liquidplayer.ui.liquid.LiquidBottomTabs
+import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import kotlinx.coroutines.Dispatchers
@@ -173,7 +172,6 @@ fun MainLibraryUi(
                         1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) })
                         3 -> SearchResultsScreen(backdrop, videos, searchQuery, hasVideoPermission, onRequestMediaPermission, onPlay)
                         else -> SettingsScreen(
-                            backdrop = backdrop,
                             hardwareAcceleration = hardwareAcceleration,
                             onHardwareAccelerationChanged = onHardwareAccelerationChanged,
                             gesturesEnabled = gesturesEnabled,
@@ -255,7 +253,7 @@ private fun VideosScreen(
             listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
         val isNonMovieFolder = pathSegments.any { nonMovieFolderPattern.matches(it) }
         val matchesCategory = when (category) {
-            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder
+            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder && item.durationMs >= 90L * 60L * 1_000L
             "TV Shows" -> looksLikeTvEpisode
             "Anime" -> isAnime
             "Recent" -> true
@@ -375,7 +373,6 @@ private fun FoldersScreen(
 
 @Composable
 private fun SettingsScreen(
-    backdrop: LayerBackdrop,
     hardwareAcceleration: Boolean,
     onHardwareAccelerationChanged: (Boolean) -> Unit,
     gesturesEnabled: Boolean,
@@ -403,19 +400,19 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                SettingsSection(backdrop, "Appearance", listOf(
+                SettingsSection("Appearance", listOf(
                     SettingItem(Icons.Default.Settings, "Dark theme", "Use the black AMOLED appearance", isDarkTheme, onThemeChanged)
                 ))
             }
             item {
-                SettingsSection(backdrop, "Playback settings", listOf(
+                SettingsSection("Playback settings", listOf(
                     SettingItem(Icons.Default.Tune, "Hardware acceleration", "Use libVLC's hardware video decoder", hardwareAcceleration, onHardwareAccelerationChanged),
                     SettingItem(Icons.Default.Settings, "Playback gestures", "Enable double-tap seeking and touch shortcuts", gesturesEnabled, onGesturesEnabledChanged)
                 ))
             }
             item {
                 SettingsActionSection(
-                    backdrop, "Your library",
+                    "Your library",
                     listOf(
                         ActionItem(Icons.Default.History, "Scan media", "Refresh videos indexed on this device", onRescan),
                         ActionItem(Icons.Default.FolderOpen, "Open video file", "Pick a file using Android's file browser", onChooseVideoFile)
@@ -424,7 +421,7 @@ private fun SettingsScreen(
             }
             item {
                 SettingsActionSection(
-                    backdrop, "Player features",
+                    "Player features",
                     listOf(
                         ActionItem(Icons.Default.Audiotrack, "Audio tracks", "Choose an audio language while playing", {}),
                         ActionItem(Icons.Default.ClosedCaption, "Subtitles", "Embedded and external subtitle tracks", {}),
@@ -433,7 +430,7 @@ private fun SettingsScreen(
             }
             item {
                 SettingsActionSection(
-                    backdrop, "About & support",
+                    "About & support",
                     listOf(
                         ActionItem(Icons.Default.Info, "About Liquid Player", "Kotlin · Jetpack Compose · libVLC", {}),
                         ActionItem(Icons.Default.Favorite, "Designed around Liquid Glass", "Neutral transparent glass, no blue tint", {}),
@@ -461,7 +458,7 @@ private data class ActionItem(
 )
 
 @Composable
-private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<SettingItem>) {
+private fun SettingsSection(title: String, items: List<SettingItem>) {
     val dividerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f)
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
@@ -475,15 +472,9 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
                             Text(item.title)
                             Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = item.checked,
-                            onCheckedChange = item.onCheckedChange,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.background,
-                                checkedTrackColor = MaterialTheme.colorScheme.onBackground,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                uncheckedTrackColor = Color.DarkGray
-                            )
+                            onCheckedChange = item.onCheckedChange
                         )
                     }
                     if (index != items.lastIndex) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 50.dp, end = 14.dp).height(0.5.dp)) {
@@ -496,7 +487,7 @@ private fun SettingsSection(backdrop: LayerBackdrop, title: String, items: List<
 }
 
 @Composable
-private fun SettingsActionSection(backdrop: LayerBackdrop, title: String, items: List<ActionItem>) {
+private fun SettingsActionSection(title: String, items: List<ActionItem>) {
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface)) {
@@ -675,7 +666,9 @@ private fun BottomNavigation(
                             imageVector = icon,
                             contentDescription = label,
                             tint = inactiveIconColor,
-                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
+                            modifier = Modifier.size(26.dp).graphicsLayer {
+                                alpha = if (selectedTab == index) 0f else 1f - collapseProgress
+                            }
                         )
                         Text(
                             label,

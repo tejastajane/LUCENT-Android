@@ -49,21 +49,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Build instrumentation test APK
-        run: gradle --no-daemon --stacktrace :app:assembleCiDebugAndroidTest
-
-      - name: Generate short local video fixture
+      - name: Generate short local video fixture for instrumentation assets
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           fi
+          mkdir -p app/src/androidTest/assets
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i testsrc2=size=320x240:rate=24 \
             -t 8 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
-            -movflags +faststart liquidplayer-smoke.mp4
+            -movflags +faststart app/src/androidTest/assets/liquidplayer-smoke.mp4
 
-      - name: Run libVLC playback smoke test on Android emulator
+      - name: Build instrumentation test APK
+        run: gradle --no-daemon --stacktrace :app:assembleCiDebugAndroidTest
+
+      - name: Run real-app UI and libVLC smoke tests on Android emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -73,14 +74,15 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            # Use this run's unique package id so a restored emulator snapshot cannot leave a conflicting signature.
-            adb uninstall "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" || true
-            adb uninstall "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}.test" || true
-            adb install app/build/outputs/apk/ci/debug/app-ci-debug.apk
-            adb push liquidplayer-smoke.mp4 /data/local/tmp/liquidplayer-smoke.mp4
-            adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" mkdir -p cache
-            adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
-            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest
+            # Let the Android Gradle instrumentation runner install the target and test APKs together.
+            # The MP4 fixture is embedded in the test APK and copied into target app cache by test code.
+            mkdir -p app/build/reports/androidTests/connected
+            # Stage 1: run only the real Settings screen test.
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#settingsScreenComposesWithoutCrashing || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/settings-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/settings-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/liquid-player-settings.png || true; adb pull /sdcard/liquid-player-settings.png app/build/reports/androidTests/connected/settings-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/liquid-player-settings-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/liquid-player-settings-window.xml app/build/reports/androidTests/connected/settings-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/settings-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/settings-windows.txt 2>&1 || true; exit 1; }
+            # Stage 2: only after Settings passes, open a MediaStore video in the actual player UI.
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#selectingVideoOpensRealPlayerScreenWithoutCrashing || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/player-ui-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/player-ui-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/liquid-player-player-ui.png || true; adb pull /sdcard/liquid-player-player-ui.png app/build/reports/androidTests/connected/player-ui-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/liquid-player-player-ui-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/liquid-player-player-ui-window.xml app/build/reports/androidTests/connected/player-ui-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/player-ui-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/player-ui-windows.txt 2>&1 || true; exit 1; }
+            # Stage 3: libVLC engine playback is deliberately last.
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.LibVlcPlaybackSmokeTest || { adb logcat -d -v threadtime > app/build/reports/androidTests/connected/libvlc-full-logcat.txt 2>&1 || true; adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/libvlc-crash.txt 2>&1 || true; adb shell screencap -p /sdcard/liquid-player-libvlc.png || true; adb pull /sdcard/liquid-player-libvlc.png app/build/reports/androidTests/connected/libvlc-screen.png >/dev/null 2>&1 || true; adb shell uiautomator dump /sdcard/liquid-player-libvlc-window.xml >/dev/null 2>&1 || true; adb pull /sdcard/liquid-player-libvlc-window.xml app/build/reports/androidTests/connected/libvlc-window.xml >/dev/null 2>&1 || true; adb shell dumpsys activity activities > app/build/reports/androidTests/connected/libvlc-activities.txt 2>&1 || true; adb shell dumpsys window windows > app/build/reports/androidTests/connected/libvlc-windows.txt 2>&1 || true; exit 1; }
 
       - name: Upload Android test results
         if: always()
