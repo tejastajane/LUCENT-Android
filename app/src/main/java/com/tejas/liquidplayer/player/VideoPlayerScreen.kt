@@ -1170,7 +1170,7 @@ private fun LiquidSeekBar(
                 valueRange = 0f..1f,
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
-                pressedScale = 1.5f,
+                pressedScale = 1.25f,
                 onDragStarted = {},
                 onDragStopped = {},
                 onDrag = { _, _ -> }

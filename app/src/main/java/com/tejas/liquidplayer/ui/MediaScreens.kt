@@ -382,61 +382,151 @@ private fun SettingsScreen(
     onRescan: () -> Unit,
     onChooseVideoFile: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize()) {
-        Text("Settings", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 14.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(48.dp))
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text("Liquid Player", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("A quiet, glassy player for your local media", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+    // A settings-only backdrop source containing the page underlay, not its controls.
+    // This provides a safe external glass sample without capturing the toggles themselves.
+    val toggleBackdrop = rememberLayerBackdrop()
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .layerBackdrop(toggleBackdrop)
+                .background(MaterialTheme.colorScheme.background)
+        )
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                "Settings",
+                Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 14.dp),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        null,
+                        tint = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(
+                            "Liquid Player",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "A quiet, glassy player for your local media",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
-        }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                SettingsSection("Appearance", listOf(
-                    SettingItem(Icons.Default.Settings, "Dark theme", "Use the black AMOLED appearance", isDarkTheme, onThemeChanged)
-                ))
-            }
-            item {
-                SettingsSection("Playback settings", listOf(
-                    SettingItem(Icons.Default.Tune, "Hardware acceleration", "Use libVLC's hardware video decoder", hardwareAcceleration, onHardwareAccelerationChanged),
-                    SettingItem(Icons.Default.Settings, "Playback gestures", "Enable double-tap seeking and touch shortcuts", gesturesEnabled, onGesturesEnabledChanged)
-                ))
-            }
-            item {
-                SettingsActionSection(
-                    "Your library",
-                    listOf(
-                        ActionItem(Icons.Default.History, "Scan media", "Refresh videos indexed on this device", onRescan),
-                        ActionItem(Icons.Default.FolderOpen, "Open video file", "Pick a file using Android's file browser", onChooseVideoFile)
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    SettingsSection(
+                        toggleBackdrop,
+                        "Appearance",
+                        listOf(
+                            SettingItem(
+                                Icons.Default.Settings,
+                                "Dark theme",
+                                "Use the black AMOLED appearance",
+                                isDarkTheme,
+                                onThemeChanged
+                            )
+                        )
                     )
-                )
-            }
-            item {
-                SettingsActionSection(
-                    "Player features",
-                    listOf(
-                        ActionItem(Icons.Default.Audiotrack, "Audio tracks", "Choose an audio language while playing", {}),
-                        ActionItem(Icons.Default.ClosedCaption, "Subtitles", "Embedded and external subtitle tracks", {}),
+                }
+                item {
+                    SettingsSection(
+                        toggleBackdrop,
+                        "Playback settings",
+                        listOf(
+                            SettingItem(
+                                Icons.Default.Tune,
+                                "Hardware acceleration",
+                                "Use libVLC's hardware video decoder",
+                                hardwareAcceleration,
+                                onHardwareAccelerationChanged
+                            ),
+                            SettingItem(
+                                Icons.Default.Settings,
+                                "Playback gestures",
+                                "Enable double-tap seeking and touch shortcuts",
+                                gesturesEnabled,
+                                onGesturesEnabledChanged
+                            )
+                        )
                     )
-                )
-            }
-            item {
-                SettingsActionSection(
-                    "About & support",
-                    listOf(
-                        ActionItem(Icons.Default.Info, "About Liquid Player", "Kotlin · Jetpack Compose · libVLC", {}),
-                        ActionItem(Icons.Default.Favorite, "Designed around Liquid Glass", "Neutral transparent glass, no blue tint", {}),
-                        ActionItem(Icons.Default.Bookmark, "Project source", "Open the Liquid Player GitHub repository", {})
+                }
+                item {
+                    SettingsActionSection(
+                        "Your library",
+                        listOf(
+                            ActionItem(
+                                Icons.Default.History,
+                                "Scan media",
+                                "Refresh videos indexed on this device",
+                                onRescan
+                            ),
+                            ActionItem(
+                                Icons.Default.FolderOpen,
+                                "Open video file",
+                                "Pick a file using Android's file browser",
+                                onChooseVideoFile
+                            )
+                        )
                     )
-                )
+                }
+                item {
+                    SettingsActionSection(
+                        "Player features",
+                        listOf(
+                            ActionItem(
+                                Icons.Default.Audiotrack,
+                                "Audio tracks",
+                                "Choose an audio language while playing",
+                                {}
+                            ),
+                            ActionItem(
+                                Icons.Default.ClosedCaption,
+                                "Subtitles",
+                                "Embedded and external subtitle tracks",
+                                {}
+                            )
+                        )
+                    )
+                }
+                item {
+                    SettingsActionSection(
+                        "About & support",
+                        listOf(
+                            ActionItem(
+                                Icons.Default.Info,
+                                "About Liquid Player",
+                                "Kotlin · Jetpack Compose · libVLC",
+                                {}
+                            ),
+                            ActionItem(
+                                Icons.Default.Favorite,
+                                "Designed around Liquid Glass",
+                                "Neutral transparent glass, no blue tint",
+                                {}
+                            ),
+                            ActionItem(
+                                Icons.Default.Bookmark,
+                                "Project source",
+                                "Open the Liquid Player GitHub repository",
+                                {}
+                            )
+                        )
+                    )
+                }
             }
         }
     }
@@ -458,7 +548,7 @@ private data class ActionItem(
 )
 
 @Composable
-private fun SettingsSection(title: String, items: List<SettingItem>) {
+private fun SettingsSection(backdrop: Backdrop, title: String, items: List<SettingItem>) {
     val dividerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f)
     Column {
         Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleSmall)
@@ -474,7 +564,8 @@ private fun SettingsSection(title: String, items: List<SettingItem>) {
                         }
                         LiquidToggle(
                             checked = item.checked,
-                            onCheckedChange = item.onCheckedChange
+                            onCheckedChange = item.onCheckedChange,
+                            backdrop = backdrop
                         )
                     }
                     if (index != items.lastIndex) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 50.dp, end = 14.dp).height(0.5.dp)) {

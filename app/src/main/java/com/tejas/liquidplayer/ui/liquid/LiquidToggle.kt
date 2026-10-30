@@ -32,8 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import androidx.compose.material3.MaterialTheme
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -45,18 +47,25 @@ import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
 import kotlinx.coroutines.flow.collectLatest
 
 /**
- * Kyant0-style damped liquid toggle, adapted to the app's neutral black/white material.
- * The switch dimensions match the reference implementation; only the glass finish is neutral.
+ * Kyant0-style damped liquid toggle, adapted to the app's neutral materials.
+ *
+ * The thumb combines a dedicated Settings underlay with this toggle's isolated
+ * track backdrop. It never samples the Settings content tree or its own thumb.
  */
 @Composable
 fun LiquidToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val activeTrackColor = if (isLightTheme) Color(0xFF303034) else Color(0xFFE5E5EA)
-    val inactiveTrackColor = if (isLightTheme) {
+    val accentColor = if (isLightTheme) {
+        Color(0xFF34C759)
+    } else {
+        Color(0xFF30D158)
+    }
+    val trackColor = if (isLightTheme) {
         Color(0xFF787878).copy(alpha = 0.20f)
     } else {
         Color(0xFF787880).copy(alpha = 0.36f)
@@ -78,16 +87,22 @@ fun LiquidToggle(
             valueRange = 0f..1f,
             visibilityThreshold = 0.001f,
             initialScale = 1f,
-            pressedScale = 1.08f,
+            pressedScale = 1.5f,
             onDragStarted = {},
             onDragStopped = {
-                val next = if (didDrag) targetValue >= 0.5f else !checkedState.value
+                val next = if (didDrag) {
+                    targetValue >= 0.5f
+                } else {
+                    !checkedState.value
+                }
                 fraction = if (next) 1f else 0f
                 onCheckedChangeState.value(next)
                 didDrag = false
             },
             onDrag = { _, dragAmount ->
-                if (!didDrag && dragAmount.x != 0f) didDrag = true
+                if (!didDrag) {
+                    didDrag = dragAmount.x != 0f
+                }
                 val delta = dragAmount.x / dragWidth
                 fraction = if (isLtr) {
                     (fraction + delta).fastCoerceIn(0f, 1f)
@@ -116,14 +131,13 @@ fun LiquidToggle(
                 .layerBackdrop(trackBackdrop)
                 .clip(RoundedCornerShape(50.dp))
                 .drawBehind {
-                    drawRect(lerp(inactiveTrackColor, activeTrackColor, dampedDragAnimation.value))
+                    drawRect(lerp(trackColor, accentColor, dampedDragAnimation.value))
                 }
                 .size(width = 64.dp, height = 28.dp)
         )
 
         Box(
             Modifier
-                .semantics { role = Role.Switch }
                 .graphicsLayer {
                     val progress = dampedDragAnimation.value
                     val padding = 2.dp.toPx()
@@ -133,14 +147,19 @@ fun LiquidToggle(
                         lerp(-padding, -(padding + dragWidth), progress)
                     }
                 }
+                .semantics { role = Role.Switch }
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
-                    backdrop = rememberBackdrop(trackBackdrop) { drawBackdrop ->
-                        val progress = dampedDragAnimation.pressProgress
-                        val scaleX = lerp(2f / 3f, 0.75f, progress)
-                        val scaleY = lerp(0f, 0.75f, progress)
-                        scale(scaleX, scaleY) { drawBackdrop() }
-                    },
+                    // Combine the isolated Settings underlay with this toggle's own track sample.
+                    backdrop = rememberCombinedBackdrop(
+                        backdrop,
+                        rememberBackdrop(trackBackdrop) { drawBackdrop ->
+                            val progress = dampedDragAnimation.pressProgress
+                            val scaleX = lerp(2f / 3f, 0.75f, progress)
+                            val scaleY = lerp(0f, 0.75f, progress)
+                            scale(scaleX, scaleY) { drawBackdrop() }
+                        }
+                    ),
                     shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
@@ -160,11 +179,17 @@ fun LiquidToggle(
                         )
                     },
                     shadow = {
-                        Shadow(radius = 4.dp, color = Color.Black.copy(alpha = 0.08f))
+                        Shadow(
+                            radius = 4.dp,
+                            color = Color.Black.copy(alpha = 0.05f)
+                        )
                     },
                     innerShadow = {
                         val progress = dampedDragAnimation.pressProgress
-                        InnerShadow(radius = 4.dp * progress, alpha = progress)
+                        InnerShadow(
+                            radius = 4.dp * progress,
+                            alpha = progress
+                        )
                     },
                     layerBlock = {
                         scaleX = dampedDragAnimation.scaleX
