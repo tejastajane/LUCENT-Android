@@ -733,6 +733,14 @@ private fun BottomNavigation(
                     val (icon, label) = navItems[index.coerceIn(0, navItems.lastIndex)]
                     Icon(imageVector = icon, contentDescription = label, tint = activeIconColor, modifier = Modifier.size(26.dp))
                 },
+                activeLabelContent = { index ->
+                    Text(
+                        text = navItems[index.coerceIn(0, navItems.lastIndex)].second,
+                        color = activeIconColor,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        maxLines = 1
+                    )
+                },
                 onCollapsedClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onSearchQueryChange("")
@@ -762,7 +770,9 @@ private fun BottomNavigation(
                             color = if (selectedTab == index) activeIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             maxLines = 1,
-                            modifier = Modifier.graphicsLayer { alpha = 1f - collapseProgress }
+                            modifier = Modifier.graphicsLayer {
+                                alpha = if (selectedTab == index) 0f else 1f - collapseProgress
+                            }
                         )
                     }
                 }
