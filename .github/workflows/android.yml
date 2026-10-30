@@ -81,12 +81,12 @@ jobs:
             adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" mkdir -p cache
             adb shell run-as "com.tejas.liquidplayer.ci${{ github.run_id }}${{ github.run_attempt }}" cp /data/local/tmp/liquidplayer-smoke.mp4 cache/liquidplayer-smoke.mp4
             mkdir -p app/build/reports/androidTests/connected
-            if ! gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest; then
-              # Preserve native and framework crash traces as downloadable CI artifacts.
-              adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/logcat-crash.txt || true
-              adb logcat -d -b main -v threadtime -s AndroidRuntime:E libc:F LiquidPlayer:E > app/build/reports/androidTests/connected/logcat-errors.txt || true
-              exit 1
-            fi
+            # Stage 1: run only the real Settings screen test.
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#settingsScreenComposesWithoutCrashing || { adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/settings-crash.txt || true; adb logcat -d -b main -v threadtime -s AndroidRuntime:E libc:F LiquidPlayer:E > app/build/reports/androidTests/connected/settings-errors.txt || true; exit 1; }
+            # Stage 2: only after Settings passes, open a MediaStore video in the actual player UI.
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.MainActivityUiSmokeTest#selectingVideoOpensRealPlayerScreenWithoutCrashing || { adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/player-ui-crash.txt || true; adb logcat -d -b main -v threadtime -s AndroidRuntime:E libc:F LiquidPlayer:E > app/build/reports/androidTests/connected/player-ui-errors.txt || true; exit 1; }
+            # Stage 3: libVLC engine playback is deliberately last.
+            gradle --no-daemon --stacktrace :app:connectedCiDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.tejas.liquidplayer.player.LibVlcPlaybackSmokeTest || { adb logcat -d -b crash -v threadtime > app/build/reports/androidTests/connected/libvlc-crash.txt || true; adb logcat -d -b main -v threadtime -s AndroidRuntime:E libc:F LiquidPlayer:E > app/build/reports/androidTests/connected/libvlc-errors.txt || true; exit 1; }
 
       - name: Upload Android test results
         if: always()
