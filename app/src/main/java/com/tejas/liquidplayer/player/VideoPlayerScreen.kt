@@ -245,7 +245,7 @@ fun VideoPlayerScreen(
     fun persistBookmarks(updated: Set<Long>) {
         bookmarksMs = updated.toSortedSet()
         playerPreferences.edit()
-            .putStringSet(bookmarksKey, bookmarksMs.map(Long::toString).toSet())
+            .putStringSet(bookmarksKey, bookmarksMs.map { it.toString() }.toSet())
             .apply()
     }
 
