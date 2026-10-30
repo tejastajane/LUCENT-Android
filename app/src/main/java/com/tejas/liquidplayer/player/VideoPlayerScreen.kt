@@ -1152,7 +1152,6 @@ private fun LiquidSeekBar(
     val latestOnSeek = rememberUpdatedState(onSeek)
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
-    var isDragging by remember { mutableStateOf(false) }
     val trackBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
@@ -1167,9 +1166,8 @@ private fun LiquidSeekBar(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 1f,
-                onDragStarted = { isDragging = true },
+                onDragStarted = {},
                 onDragStopped = {
-                    isDragging = false
                     latestOnSeek.value((targetValue * latestDuration.value).toLong().coerceAtLeast(0L))
                 },
                 onDrag = { _, dragAmount ->
@@ -1225,9 +1223,9 @@ private fun LiquidSeekBar(
             val thumbOffsetPx = (thumbTravelPx * dampedDragAnimation.progress).fastCoerceIn(0f, thumbTravelPx)
             Box(
                 Modifier
-                    .align(Alignment.CenterStart)
+                    .align(if (isLtr) Alignment.CenterStart else Alignment.CenterEnd)
                     .graphicsLayer {
-                        translationX = if (isLtr) thumbOffsetPx else thumbTravelPx - thumbOffsetPx
+                        translationX = if (isLtr) thumbOffsetPx else -thumbOffsetPx
                     }
                     .then(dampedDragAnimation.modifier)
                     .drawBackdrop(
