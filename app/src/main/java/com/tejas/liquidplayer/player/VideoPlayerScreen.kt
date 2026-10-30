@@ -1195,14 +1195,17 @@ private fun LiquidSeekBar(
             }
         }
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .layerBackdrop(trackBackdrop)
-        ) {
+        Box(Modifier.fillMaxSize()) {
+            // Capture only the seek track and progress. The glass thumb must remain
+            // outside this source because it samples trackBackdrop itself.
             Box(
                 Modifier
-                    .align(Alignment.Center)
+                    .fillMaxSize()
+                    .layerBackdrop(trackBackdrop)
+            ) {
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
                     .fillMaxWidth()
                     .height(36.dp)
                     .pointerInput(durationMs, trackWidthPx, isLtr) {
@@ -1231,6 +1234,8 @@ private fun LiquidSeekBar(
                     .clip(RoundedCornerShape(50.dp))
                     .background(Color.White.copy(alpha = 0.88f))
             )
+
+            }
 
             val thumbOffsetPx = (thumbTravelPx * dampedDragAnimation.progress).fastCoerceIn(0f, thumbTravelPx)
             Box(
