@@ -666,7 +666,9 @@ private fun BottomNavigation(
                             imageVector = icon,
                             contentDescription = label,
                             tint = inactiveIconColor,
-                            modifier = Modifier.size(26.dp).graphicsLayer { alpha = 1f - collapseProgress }
+                            modifier = Modifier.size(26.dp).graphicsLayer {
+                                alpha = if (selectedTab == index) 0f else 1f - collapseProgress
+                            }
                         )
                         Text(
                             label,

@@ -138,8 +138,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.blur
@@ -1143,8 +1141,7 @@ private fun LiquidSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Keep the capsule footprint from main: 30 × 16 dp.
-    // Kyant0's damped spring temporarily lifts/scales the capsule while pressed.
+    // Main-branch capsule dimensions and pointer-to-time mapping.
     val thumbWidth = 30.dp
     val thumbHeight = 16.dp
     val thumbWidthPx = with(LocalDensity.current) { thumbWidth.toPx() }
@@ -1157,14 +1154,15 @@ private fun LiquidSeekBar(
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
-    var didDrag by remember { mutableStateOf(false) }
-    val trackBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(
         modifier.fillMaxWidth().height(36.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         val trackWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val usableWidthPx = (trackWidthPx - thumbWidthPx).coerceAtLeast(1f)
+        val thumbTravelPx = usableWidthPx
+
         val dampedDragAnimation = remember(animationScope) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -1174,26 +1172,8 @@ private fun LiquidSeekBar(
                 initialScale = 1f,
                 pressedScale = 1.5f,
                 onDragStarted = {},
-                onDragStopped = {
-                    if (didDrag) {
-                        latestOnSeek.value(
-                            (targetValue * latestDuration.value).toLong().coerceAtLeast(0L)
-                        )
-                    }
-                    didDrag = false
-                },
-                onDrag = { _, dragAmount ->
-                    if (!didDrag) didDrag = dragAmount.x != 0f
-                    val delta = dragAmount.x / trackWidthPx
-                    val next = if (isLtr) {
-                        (targetValue + delta).coerceIn(0f, 1f)
-                    } else {
-                        (targetValue - delta).coerceIn(0f, 1f)
-                    }
-                    latestOnSeek.value(
-                        (next * latestDuration.value).toLong().coerceAtLeast(0L)
-                    )
-                }
+                onDragStopped = {},
+                onDrag = { _, _ -> }
             )
         }
 
@@ -1205,29 +1185,53 @@ private fun LiquidSeekBar(
             }
         }
 
-        val thumbTranslationX = (
-            -thumbWidthPx / 2f + trackWidthPx * dampedDragAnimation.progress
-        ).fastCoerceIn(
-            -thumbWidthPx / 4f,
-            trackWidthPx - thumbWidthPx * 3f / 4f
-        )
-        // Stop the filled segment at the capsule's trailing edge, not beneath its centre.
-        val progressWidthPx = thumbTranslationX.coerceIn(0f, trackWidthPx)
+        fun fractionAt(positionX: Float): Float {
+            val fraction = (
+                (positionX - thumbWidthPx / 2f) / usableWidthPx
+            ).coerceIn(0f, 1f)
+            return if (isLtr) fraction else 1f - fraction
+        }
 
-        // One centred track: the dim remainder and bright elapsed segment share one baseline.
-        Box(Modifier.fillMaxSize().layerBackdrop(trackBackdrop)) {
+        val thumbOffsetPx = thumbTravelPx * dampedDragAnimation.progress
+        // Filled progress stops at the back/tail edge of the moving capsule.
+        val progressWidthPx = thumbOffsetPx.coerceIn(0f, trackWidthPx)
+
+        // The capsule samples the player frame backdrop directly. The progress stroke
+        // is deliberately not exported as a backdrop source, so it cannot refract inside the glass.
+        Box(Modifier.fillMaxSize()) {
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(animationScope, durationMs, trackWidthPx, isLtr) {
+                    .pointerInput(dampedDragAnimation, durationMs, usableWidthPx, isLtr) {
                         detectTapGestures { point ->
-                            val fraction = (point.x / trackWidthPx).coerceIn(0f, 1f)
-                            val target = if (isLtr) fraction else 1f - fraction
+                            val target = fractionAt(point.x)
                             dampedDragAnimation.animateToValue(target)
                             latestOnSeek.value(
                                 (target * latestDuration.value).toLong().coerceAtLeast(0L)
                             )
                         }
+                    }
+                    .pointerInput(dampedDragAnimation, durationMs, usableWidthPx, isLtr) {
+                        detectDragGestures(
+                            onDragStart = { point ->
+                                val target = fractionAt(point.x)
+                                dampedDragAnimation.press()
+                                dampedDragAnimation.updateValue(target)
+                                latestOnSeek.value(
+                                    (target * latestDuration.value).toLong().coerceAtLeast(0L)
+                                )
+                            },
+                            onDragEnd = { dampedDragAnimation.release() },
+                            onDragCancel = { dampedDragAnimation.release() },
+                            onDrag = { change, _ ->
+                                val target = fractionAt(change.position.x)
+                                dampedDragAnimation.updateValue(target)
+                                latestOnSeek.value(
+                                    (target * latestDuration.value).toLong().coerceAtLeast(0L)
+                                )
+                                change.consume()
+                            }
+                        )
                     }
             ) {
                 val centerY = size.height / 2f
@@ -1239,7 +1243,7 @@ private fun LiquidSeekBar(
                     start = androidx.compose.ui.geometry.Offset(startX, centerY),
                     end = androidx.compose.ui.geometry.Offset(endX, centerY),
                     strokeWidth = stroke,
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    cap = StrokeCap.Round
                 )
                 val progressEndX = if (isLtr) {
                     progressWidthPx
@@ -1251,7 +1255,7 @@ private fun LiquidSeekBar(
                     start = androidx.compose.ui.geometry.Offset(startX, centerY),
                     end = androidx.compose.ui.geometry.Offset(progressEndX, centerY),
                     strokeWidth = stroke,
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    cap = StrokeCap.Round
                 )
             }
         }
@@ -1259,19 +1263,10 @@ private fun LiquidSeekBar(
         Box(
             Modifier
                 .graphicsLayer {
-                    translationX = thumbTranslationX * if (isLtr) 1f else -1f
+                    translationX = if (isLtr) thumbOffsetPx else -thumbOffsetPx
                 }
-                .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(
-                        backdrop,
-                        rememberBackdrop(trackBackdrop) { drawBackdrop ->
-                            val press = dampedDragAnimation.pressProgress
-                            val scaleX = androidx.compose.ui.util.lerp(2f / 3f, 1f, press)
-                            val scaleY = androidx.compose.ui.util.lerp(0f, 1f, press)
-                            scale(scaleX, scaleY) { drawBackdrop() }
-                        }
-                    ),
+                    backdrop = backdrop,
                     shape = { RoundedCornerShape(50.dp) },
                     effects = {
                         val press = dampedDragAnimation.pressProgress
@@ -1318,7 +1313,7 @@ private fun LiquidSeekBar(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
-                        // Match GlassIconButton's navMaterial surface paint exactly.
+                        // Same neutral surface paint as GlassSurface(navMaterial = true).
                         val surface = if (isLightTheme) {
                             Color.Black.copy(alpha = 0.04f)
                         } else {
