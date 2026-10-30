@@ -72,6 +72,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -178,6 +179,19 @@ fun VideoPlayerScreen(
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
+    val favouriteKey = remember(video.uri) { "favourite_${video.uri.toString().hashCode()}" }
+    var isFavourite by remember(video.uri, playerPreferences) {
+        mutableStateOf(playerPreferences.getBoolean(favouriteKey, false))
+    }
+    val bookmarksKey = remember(video.uri) { "bookmarks_${video.uri.toString().hashCode()}" }
+    var bookmarksMs by remember(video.uri, playerPreferences) {
+        mutableStateOf(
+            playerPreferences.getStringSet(bookmarksKey, emptySet())
+                ?.mapNotNull { it.toLongOrNull() }
+                ?.toSet()
+                ?: emptySet()
+        )
+    }
     val savedPositionMs = remember(video.uri, playerPreferences) { playerPreferences.getLong(progressKey, 0L) }
     val backdrop = rememberLayerBackdrop()
     val retryScope = rememberCoroutineScope()
@@ -227,6 +241,14 @@ fun VideoPlayerScreen(
             playerPreferences.edit().putLong(progressKey, storedPosition).apply()
         }
     }
+
+    fun persistBookmarks(updated: Set<Long>) {
+        bookmarksMs = updated.toSortedSet()
+        playerPreferences.edit()
+            .putStringSet(bookmarksKey, bookmarksMs.map(Long::toString).toSet())
+            .apply()
+    }
+
 
     BackHandler(enabled = !isInPictureInPictureMode) {
         if (controlsLocked) {
@@ -286,12 +308,27 @@ fun VideoPlayerScreen(
 
     DisposableEffect(activity, controller) {
         val originalOrientation = activity?.requestedOrientation
+        val decorView = activity?.window?.decorView
         val windowController = activity?.let {
             WindowInsetsControllerCompat(it.window, it.window.decorView)
         }
-        windowController?.hide(WindowInsetsCompat.Type.systemBars())
+        windowController?.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        // Hide after attachment and whenever the shade/notification panel returns focus.
+        decorView?.post { windowController?.hide(WindowInsetsCompat.Type.systemBars()) }
+        val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) {
+                decorView?.post { windowController?.hide(WindowInsetsCompat.Type.systemBars()) }
+            }
+        }
+        if (decorView?.viewTreeObserver?.isAlive == true) {
+            decorView.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
+        }
         val originalBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
         onDispose {
+            if (decorView?.viewTreeObserver?.isAlive == true) {
+                decorView.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
+            }
             windowController?.show(WindowInsetsCompat.Type.systemBars())
             activity?.window?.let { window ->
                 val params = window.attributes
@@ -795,6 +832,8 @@ fun VideoPlayerScreen(
                                     PlayerPanel.Tools -> "Player tools"
                                     PlayerPanel.AspectRatio -> "Aspect ratio"
                                     PlayerPanel.Speed -> "Playback speed"
+                                    PlayerPanel.Bookmarks -> "Bookmarks"
+                                    PlayerPanel.Information -> "Information"
                                     PlayerPanel.None -> ""
                                 },
                                 style = MaterialTheme.typography.titleLarge,
@@ -854,9 +893,25 @@ fun VideoPlayerScreen(
                                 }
                             }
                             PlayerPanel.Tools -> ToolsPanel(
-                                onAudio = { panel = PlayerPanel.Audio },
-                                onSubtitles = { panel = PlayerPanel.Subtitles },
-                                onSpeed = { panel = PlayerPanel.Speed }
+                                isFavourite = isFavourite,
+                                onBookmarks = { panel = PlayerPanel.Bookmarks },
+                                onSpeed = { panel = PlayerPanel.Speed },
+                                onFavourite = {
+                                    isFavourite = !isFavourite
+                                    playerPreferences.edit().putBoolean(favouriteKey, isFavourite).apply()
+                                },
+                                onShare = {
+                                    runCatching {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = video.mimeType?.takeIf { it.contains("/") } ?: "video/*"
+                                            putExtra(Intent.EXTRA_STREAM, video.uri)
+                                            clipData = ClipData.newUri(context.contentResolver, video.name, video.uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share video"))
+                                    }
+                                },
+                                onInformation = { panel = PlayerPanel.Information }
                             )
                             PlayerPanel.AspectRatio -> AspectRatioPanel { label, ratio ->
                                 selectedAspectIndex = aspectRatios.indexOfFirst { it.first == label }.coerceAtLeast(0)
@@ -876,6 +931,58 @@ fun VideoPlayerScreen(
                                     ) {
                                         Text(if (rate == 1f) "Normal" else "$rate×", Modifier.weight(1f))
                                         if (speed == rate) Icon(Icons.Default.Check, null, tint = Color.White)
+                                    }
+                                }
+                            }
+                            PlayerPanel.Bookmarks -> {
+                                Button(
+                                    onClick = {
+                                        val current = runCatching { controller.player.time }
+                                            .getOrDefault(positionMs).coerceAtLeast(0L)
+                                        val alreadySaved = bookmarksMs.any { kotlin.math.abs(it - current) < 1_000L }
+                                        if (!alreadySaved) persistBookmarks(bookmarksMs + current)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Default.Bookmark, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Save current position")
+                                }
+                                if (bookmarksMs.isEmpty()) {
+                                    Text("No bookmarks for this video yet.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    bookmarksMs.sorted().forEach { bookmark ->
+                                        Row(
+                                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    controller.seekTo(bookmark)
+                                                    positionMs = bookmark
+                                                    panel = PlayerPanel.None
+                                                }
+                                                .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(formatDuration(bookmark), Modifier.weight(1f), color = Color.White)
+                                            IconButton(onClick = { persistBookmarks(bookmarksMs - bookmark) }) {
+                                                Icon(Icons.Default.Delete, "Delete bookmark", tint = Color.LightGray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            PlayerPanel.Information -> {
+                                val details = listOf(
+                                    "File name" to video.name,
+                                    "Folder" to video.relativePath.ifBlank { "Unknown" },
+                                    "Duration" to formatDuration(durationMs),
+                                    "File size" to if (video.sizeBytes > 0L) Formatter.formatFileSize(context, video.sizeBytes) else "Unknown",
+                                    "Format" to (video.mimeType ?: "Unknown")
+                                )
+                                details.forEach { (label, value) ->
+                                    Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
+                                        Text(label, color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                                        Text(value, color = Color.White, style = MaterialTheme.typography.bodyMedium)
                                     }
                                 }
                             }
@@ -920,19 +1027,19 @@ private fun TrackPanel(
 
 @Composable
 private fun ToolsPanel(
-    onAudio: () -> Unit,
-    onSubtitles: () -> Unit,
-    onSpeed: () -> Unit
+    isFavourite: Boolean,
+    onBookmarks: () -> Unit,
+    onSpeed: () -> Unit,
+    onFavourite: () -> Unit,
+    onShare: () -> Unit,
+    onInformation: () -> Unit
 ) {
     val tools = listOf(
-        Triple(Icons.Default.PlaylistAdd, "Playing queue", onSpeed),
-        Triple(Icons.Default.Bookmark, "Bookmark", {}),
-        Triple(Icons.Default.Audiotrack, "Audio tracks", onAudio),
-        Triple(Icons.Default.ClosedCaption, "Subtitles", onSubtitles),
+        Triple(Icons.Default.Bookmark, "Bookmarks", onBookmarks),
         Triple(Icons.Default.Speed, "Playback speed", onSpeed),
-        Triple(Icons.Default.Favorite, "Favourite", {}),
-        Triple(Icons.Default.Share, "Share", {}),
-        Triple(Icons.Default.Info, "Information", {})
+        Triple(Icons.Default.Favorite, if (isFavourite) "Remove from favourites" else "Favourite", onFavourite),
+        Triple(Icons.Default.Share, "Share", onShare),
+        Triple(Icons.Default.Info, "Information", onInformation)
     )
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         tools.forEach { (icon, label, action) ->
