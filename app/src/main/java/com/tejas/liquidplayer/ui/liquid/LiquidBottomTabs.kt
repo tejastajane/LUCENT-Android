@@ -6,7 +6,9 @@ package com.tejas.liquidplayer.ui.liquid
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -78,6 +80,7 @@ fun LiquidBottomTabs(
     onCollapsedClick: (() -> Unit)? = null,
     collapsedContent: (@Composable () -> Unit)? = null,
     activeContent: (@Composable (Int) -> Unit)? = null,
+    activeLabelContent: (@Composable (Int) -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -342,9 +345,9 @@ fun LiquidBottomTabs(
                 }
             }
         }
-        // Keep the selected SVG in its tab slot above the moving glass capsule.
-        // The glass capsule has its own spring position and never owns the icon layer.
-        if (activeContent != null) {
+        // Keep the selected SVG and label in the tab slot above the moving glass capsule.
+        // Both foreground elements stay independent of the refracting pill underneath.
+        if (activeContent != null || activeLabelContent != null) {
             val activeIndex = currentIndex.coerceIn(0, tabsCount - 1)
             Row(
                 Modifier
@@ -360,11 +363,17 @@ fun LiquidBottomTabs(
                         contentAlignment = Alignment.TopCenter
                     ) {
                         if (index == activeIndex) {
-                            Box(
-                                Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
-                                contentAlignment = Alignment.Center
+                            Column(
+                                Modifier.padding(top = lerp(12f, 18f, collapse).dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2f.dp)
                             ) {
-                                activeContent(activeIndex)
+                                if (activeContent != null) {
+                                    Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                                        activeContent(activeIndex)
+                                    }
+                                }
+                                activeLabelContent?.invoke(activeIndex)
                             }
                         }
                     }
