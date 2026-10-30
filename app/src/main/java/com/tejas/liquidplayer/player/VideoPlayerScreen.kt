@@ -1228,7 +1228,7 @@ private fun LiquidSeekBar(
                     .align(if (isLtr) Alignment.CenterStart else Alignment.CenterEnd)
                     .fillMaxWidth(dampedDragAnimation.progress.fastCoerceIn(0f, 1f))
                     .height(5.dp)
-                    .clip(Capsule())
+                    .clip(RoundedCornerShape(50.dp))
                     .background(Color.White.copy(alpha = 0.88f))
             )
 
