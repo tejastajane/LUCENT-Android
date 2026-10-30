@@ -139,6 +139,8 @@ class MainActivityUiSmokeTest {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, TEST_VIDEO_NAME)
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.DURATION, 8_000L)
+            put(MediaStore.MediaColumns.DATE_ADDED, System.currentTimeMillis() / 1_000L)
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
                 "${android.os.Environment.DIRECTORY_MOVIES}/LiquidPlayerUiSmoke"
