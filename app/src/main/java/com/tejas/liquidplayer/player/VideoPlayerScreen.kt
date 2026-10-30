@@ -178,6 +178,31 @@ fun VideoPlayerScreen(
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
     val favouriteKey = remember(video.uri) { "favourite_${video.uri.toString().hashCode()}" }
+    val preferenceSuffix = remember(video.uri) { video.uri.toString().hashCode().toString() }
+    val audioTrackIdKey = remember(preferenceSuffix) { "audio_track_id_$preferenceSuffix" }
+    val audioTrackLabelKey = remember(preferenceSuffix) { "audio_track_label_$preferenceSuffix" }
+    val subtitleTrackIdKey = remember(preferenceSuffix) { "subtitle_track_id_$preferenceSuffix" }
+    val subtitleTrackLabelKey = remember(preferenceSuffix) { "subtitle_track_label_$preferenceSuffix" }
+    val externalSubtitleUriKey = remember(preferenceSuffix) { "external_subtitle_uri_$preferenceSuffix" }
+    val subtitleDelayKey = remember(preferenceSuffix) { "subtitle_delay_us_$preferenceSuffix" }
+    val savedAudioTrackId = remember(video.uri, playerPreferences) {
+        playerPreferences.getInt(audioTrackIdKey, Int.MIN_VALUE)
+    }
+    val savedAudioTrackLabel = remember(video.uri, playerPreferences) {
+        playerPreferences.getString(audioTrackLabelKey, null)
+    }
+    val savedSubtitleTrackId = remember(video.uri, playerPreferences) {
+        playerPreferences.getInt(subtitleTrackIdKey, Int.MIN_VALUE)
+    }
+    val savedSubtitleTrackLabel = remember(video.uri, playerPreferences) {
+        playerPreferences.getString(subtitleTrackLabelKey, null)
+    }
+    val savedExternalSubtitleUri = remember(video.uri, playerPreferences) {
+        playerPreferences.getString(externalSubtitleUriKey, null)
+    }
+    val savedSubtitleDelayUs = remember(video.uri, playerPreferences) {
+        playerPreferences.getLong(subtitleDelayKey, 0L)
+    }
     var isFavourite by remember(video.uri, playerPreferences) {
         mutableStateOf(playerPreferences.getBoolean(favouriteKey, false))
     }
@@ -228,7 +253,7 @@ fun VideoPlayerScreen(
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
     var showAspectRatioFeedback by remember { mutableStateOf(false) }
-    var subtitleDelayUs by remember(video.uri) { mutableLongStateOf(0L) }
+    var subtitleDelayUs by remember(video.uri) { mutableLongStateOf(savedSubtitleDelayUs) }
     val aspectRatios = remember { listOf("Original" to null, "16:9" to "16:9", "4:3" to "4:3", "1:1" to "1:1", "21:9" to "21:9", "2.35:1" to "2.35:1") }
 
     val persistProgress = remember(video.uri, controller, playerPreferences) {
@@ -238,6 +263,18 @@ fun VideoPlayerScreen(
             val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
             playerPreferences.edit().putLong(progressKey, storedPosition).apply()
         }
+    }
+
+    fun findSavedTrack(
+        tracks: List<TrackOption>,
+        preferredId: Int,
+        preferredLabel: String?
+    ): TrackOption? {
+        if (preferredId != Int.MIN_VALUE) {
+            tracks.firstOrNull { it.id == preferredId }?.let { return it }
+        }
+        val label = preferredLabel?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return tracks.firstOrNull { it.label.trim().equals(label, ignoreCase = true) }
     }
 
     fun persistBookmarks(updated: Set<Long>) {
@@ -299,6 +336,14 @@ fun VideoPlayerScreen(
                 context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             val added = controller.addExternalSubtitle(uri)
+            if (added) {
+                playerPreferences.edit()
+                    .putString(externalSubtitleUriKey, uri.toString())
+                    .remove(subtitleTrackIdKey)
+                    .remove(subtitleTrackLabelKey)
+                    .apply()
+                selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+            }
             trackSelectionMessage = if (added) "External subtitle added" else "VLC couldn't add this subtitle file."
             panel = PlayerPanel.Subtitles
         }
@@ -350,6 +395,69 @@ fun VideoPlayerScreen(
                 playbackError = immediateError
             }
         }
+        // Restore this video's selected streams after libVLC has opened its tracks.
+        // Track IDs are preferred; track labels provide a fallback if libVLC reorders IDs.
+        launch {
+            var audioRestored = savedAudioTrackId == Int.MIN_VALUE
+            var subtitleRestored =
+                savedSubtitleTrackId == Int.MIN_VALUE && savedExternalSubtitleUri == null
+            var delayRestored = savedSubtitleDelayUs == 0L
+            var externalSubtitleAttempted = false
+
+            repeat(40) {
+                if (!isActive) return@launch
+                val availableAudio = controller.audioTracks()
+                val availableSubtitles = controller.subtitleTracks()
+                audioTracks = availableAudio
+                subtitleTracks = availableSubtitles
+                val mediaReady = runCatching { controller.player.isPlaying }.getOrDefault(false) ||
+                    availableAudio.isNotEmpty() || availableSubtitles.isNotEmpty()
+
+                if (mediaReady) {
+                    if (!audioRestored && availableAudio.isNotEmpty()) {
+                        val match = findSavedTrack(availableAudio, savedAudioTrackId, savedAudioTrackLabel)
+                        if (match != null) {
+                            audioRestored = controller.currentAudioTrackId() == match.id ||
+                                controller.selectAudioTrack(match.id)
+                        }
+                    }
+
+                    if (!subtitleRestored) {
+                        if (savedExternalSubtitleUri != null && !externalSubtitleAttempted) {
+                            externalSubtitleAttempted = true
+                            subtitleRestored = controller.addExternalSubtitle(Uri.parse(savedExternalSubtitleUri))
+                        } else if (savedSubtitleTrackId == -1) {
+                            subtitleRestored = controller.currentSubtitleTrackId() == -1 ||
+                                controller.selectSubtitleTrack(-1)
+                        } else if (availableSubtitles.isNotEmpty()) {
+                            val match = findSavedTrack(
+                                availableSubtitles,
+                                savedSubtitleTrackId,
+                                savedSubtitleTrackLabel
+                            )
+                            if (match != null) {
+                                subtitleRestored = controller.currentSubtitleTrackId() == match.id ||
+                                    controller.selectSubtitleTrack(match.id)
+                            }
+                        }
+                    }
+
+                    if (!delayRestored) {
+                        delayRestored = controller.setSubtitleDelayUs(savedSubtitleDelayUs)
+                    }
+                }
+
+                if (audioRestored && subtitleRestored && delayRestored) {
+                    selectedAudioTrackId = controller.currentAudioTrackId()
+                    selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+                    return@launch
+                }
+                delay(250L)
+            }
+            selectedAudioTrackId = controller.currentAudioTrackId()
+            selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+        }
+
         var lastSavedAt = SystemClock.elapsedRealtime()
         while (isActive) {
             val currentTime = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
@@ -851,7 +959,14 @@ fun VideoPlayerScreen(
                                     onSelect = { id ->
                                         val success = controller.selectAudioTrack(id)
                                         selectedAudioTrackId = controller.currentAudioTrackId()
-                                        trackSelectionMessage = if (success) "Audio track selected" else "VLC could not select this audio track."
+                                        if (success || selectedAudioTrackId == id) {
+                                            val editor = playerPreferences.edit().putInt(audioTrackIdKey, id)
+                                            audioTracks.firstOrNull { it.id == id }?.let {
+                                                editor.putString(audioTrackLabelKey, it.label)
+                                            }
+                                            editor.apply()
+                                        }
+                                        trackSelectionMessage = if (success || selectedAudioTrackId == id) "Audio track selected" else "VLC could not select this audio track."
                                     }
                                 )
                             }
@@ -873,21 +988,49 @@ fun VideoPlayerScreen(
                                     onSelect = { id ->
                                         val success = controller.selectSubtitleTrack(id)
                                         selectedSubtitleTrackId = controller.currentSubtitleTrackId()
-                                        trackSelectionMessage = if (success) "Subtitle track selected" else "VLC could not select this subtitle track."
+                                        if (success || selectedSubtitleTrackId == id) {
+                                            val editor = playerPreferences.edit()
+                                                .putInt(subtitleTrackIdKey, id)
+                                                .remove(externalSubtitleUriKey)
+                                            subtitleTracks.firstOrNull { it.id == id }?.let {
+                                                editor.putString(subtitleTrackLabelKey, it.label)
+                                            }
+                                            editor.apply()
+                                        }
+                                        trackSelectionMessage = if (success || selectedSubtitleTrackId == id) "Subtitle track selected" else "VLC could not select this subtitle track."
                                     },
                                     onDisable = {
                                         val success = controller.selectSubtitleTrack(-1)
                                         selectedSubtitleTrackId = controller.currentSubtitleTrackId()
-                                        trackSelectionMessage = if (success) "Subtitles disabled" else "VLC could not disable subtitles."
+                                        if (success || selectedSubtitleTrackId == -1) {
+                                            playerPreferences.edit()
+                                                .putInt(subtitleTrackIdKey, -1)
+                                                .remove(subtitleTrackLabelKey)
+                                                .remove(externalSubtitleUriKey)
+                                                .apply()
+                                        }
+                                        trackSelectionMessage = if (success || selectedSubtitleTrackId == -1) "Subtitles disabled" else "VLC could not disable subtitles."
                                     }
                                 )
                                 Spacer(Modifier.height(14.dp))
                                 Text("Subtitle delay", style = MaterialTheme.typography.titleMedium, color = Color.White)
                                 Text("Positive values show subtitles later; negative values show them earlier.", style = MaterialTheme.typography.bodySmall, color = Color.LightGray, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    TextButton(onClick = { val next = (subtitleDelayUs - 50_000L).coerceAtLeast(-10_000_000L); if (controller.setSubtitleDelayUs(next)) subtitleDelayUs = next }) { Text("−50 ms", color = Color.White) }
+                                    TextButton(onClick = {
+                                        val next = (subtitleDelayUs - 50_000L).coerceAtLeast(-10_000_000L)
+                                        if (controller.setSubtitleDelayUs(next)) {
+                                            subtitleDelayUs = next
+                                            playerPreferences.edit().putLong(subtitleDelayKey, next).apply()
+                                        }
+                                    }) { Text("−50 ms", color = Color.White) }
                                     Text("%+.0f ms".format(subtitleDelayUs / 1000.0), modifier = Modifier.weight(1f), color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                    TextButton(onClick = { val next = (subtitleDelayUs + 50_000L).coerceAtMost(10_000_000L); if (controller.setSubtitleDelayUs(next)) subtitleDelayUs = next }) { Text("+50 ms", color = Color.White) }
+                                    TextButton(onClick = {
+                                        val next = (subtitleDelayUs + 50_000L).coerceAtMost(10_000_000L)
+                                        if (controller.setSubtitleDelayUs(next)) {
+                                            subtitleDelayUs = next
+                                            playerPreferences.edit().putLong(subtitleDelayKey, next).apply()
+                                        }
+                                    }) { Text("+50 ms", color = Color.White) }
                                 }
                             }
                             PlayerPanel.Tools -> ToolsPanel(

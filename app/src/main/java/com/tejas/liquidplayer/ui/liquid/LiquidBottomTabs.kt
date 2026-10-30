@@ -326,20 +326,6 @@ fun LiquidBottomTabs(
                 .height(selectedPillHeight)
                 .width(selectedPillWidth)
         ) {
-            if (activeContent != null) {
-                val activeIndex = dampedDragAnimation.value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
-                Box(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapse },
-                    contentAlignment = Alignment.TopCenter
-                ) {
-                    Box(
-                        Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        activeContent(activeIndex)
-                    }
-                }
-            }
             if (collapsedContent != null) {
                 Box(
                     Modifier.fillMaxSize()
@@ -355,5 +341,35 @@ fun LiquidBottomTabs(
                 }
             }
         }
+        // Keep the selected SVG in its tab slot above the moving glass capsule.
+        // The glass capsule has its own spring position and never owns the icon layer.
+        if (activeContent != null) {
+            val activeIndex = selectedTabIndex.coerceIn(0, tabsCount - 1)
+            Row(
+                Modifier
+                    .height(containerHeight)
+                    .fillMaxWidth()
+                    .padding(4f.dp)
+                    .graphicsLayer { alpha = 1f - collapse },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(tabsCount) { index ->
+                    Box(
+                        Modifier.weight(1f).fillMaxHeight(),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        if (index == activeIndex) {
+                            Box(
+                                Modifier.padding(top = lerp(12f, 18f, collapse).dp).size(26.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                activeContent(activeIndex)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
     }
 }

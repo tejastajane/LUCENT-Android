@@ -66,7 +66,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material3.Button
@@ -270,9 +269,6 @@ private fun VideosScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { category = if (category == "All") "Recent" else "All" }) {
-                Icon(Icons.Default.Tune, contentDescription = "Sort videos", tint = MaterialTheme.colorScheme.onBackground)
-            }
         }
         if (!selectedFolder.isNullOrBlank()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -689,7 +685,7 @@ private fun BottomNavigation(
     val active = navItems[selectedTab.coerceIn(0, navItems.lastIndex)]
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val activeIconColor = if (isLightTheme) Color(0xFF0A84FF) else Color.White
-    val activeLabelColor = if (isLightTheme) Color(0xFF1D1D1F) else Color.White
+    val activeLabelColor = activeIconColor
     val inactiveIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BoxWithConstraints(
