@@ -60,6 +60,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -911,16 +913,22 @@ fun VideoPlayerScreen(
         }
 
         if (panel != PlayerPanel.None && !isInPictureInPictureMode) {
-            Box(
+            BoxWithConstraints(
                 Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.20f)).clickable(
                     indication = null,
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 ) { panel = PlayerPanel.None },
-                contentAlignment = if (isLandscape) Alignment.CenterEnd else Alignment.Center
+                contentAlignment = if (isLandscape) Alignment.CenterEnd else Alignment.BottomCenter
             ) {
                 GlassSurface(
                     backdrop,
-                    modifier = Modifier.fillMaxHeight().width(if (isLandscape) 340.dp else (screenWidth - 24.dp).coerceAtLeast(280.dp)).padding(12.dp).clickable(
+                    modifier = Modifier.width(if (isLandscape) 340.dp else (screenWidth - 24.dp).coerceAtLeast(280.dp))
+                        .padding(12.dp)
+                        .then(
+                            if (isLandscape) Modifier.fillMaxHeight()
+                            else Modifier.heightIn(max = (maxHeight - 24.dp).coerceAtLeast(0.dp)).wrapContentHeight()
+                        )
+                        .clickable(
                         indication = null,
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                     ) {},
@@ -929,7 +937,12 @@ fun VideoPlayerScreen(
                     navMaterial = true,
                     flatNavMaterial = true
                 ) {
-                    Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState())) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .then(if (isLandscape) Modifier.fillMaxHeight() else Modifier.wrapContentHeight())
+                            .padding(18.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 when (panel) {
@@ -1017,20 +1030,20 @@ fun VideoPlayerScreen(
                                 Text("Positive values show subtitles later; negative values show them earlier.", style = MaterialTheme.typography.bodySmall, color = Color.LightGray, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     TextButton(onClick = {
-                                        val next = (subtitleDelayUs - 50_000L).coerceAtLeast(-10_000_000L)
+                                        val next = (subtitleDelayUs - 100_000L).coerceAtLeast(-10_000_000L)
                                         if (controller.setSubtitleDelayUs(next)) {
                                             subtitleDelayUs = next
                                             playerPreferences.edit().putLong(subtitleDelayKey, next).apply()
                                         }
-                                    }) { Text("−50 ms", color = Color.White) }
-                                    Text("%+.0f ms".format(subtitleDelayUs / 1000.0), modifier = Modifier.weight(1f), color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    }) { Text("−0.1 s", color = Color.White) }
+                                    Text(String.format(java.util.Locale.US, "%+.1f s", subtitleDelayUs / 1_000_000.0), modifier = Modifier.weight(1f), color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                     TextButton(onClick = {
-                                        val next = (subtitleDelayUs + 50_000L).coerceAtMost(10_000_000L)
+                                        val next = (subtitleDelayUs + 100_000L).coerceAtMost(10_000_000L)
                                         if (controller.setSubtitleDelayUs(next)) {
                                             subtitleDelayUs = next
                                             playerPreferences.edit().putLong(subtitleDelayKey, next).apply()
                                         }
-                                    }) { Text("+50 ms", color = Color.White) }
+                                    }) { Text("+0.1 s", color = Color.White) }
                                 }
                             }
                             PlayerPanel.Tools -> ToolsPanel(
