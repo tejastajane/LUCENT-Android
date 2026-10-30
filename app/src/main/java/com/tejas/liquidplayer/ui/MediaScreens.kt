@@ -415,7 +415,7 @@ private fun SettingsScreen(
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text(
-                            "Liquid Player",
+                            "LUCENT",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -499,7 +499,7 @@ private fun SettingsScreen(
                         listOf(
                             ActionItem(
                                 Icons.Default.Info,
-                                "About Liquid Player",
+                                "About LUCENT",
                                 "Version $appVersion · Local video playback",
                                 { infoDialog = SettingsInfoPage.About }
                             ),
@@ -528,8 +528,8 @@ private fun SettingsScreen(
         }
         infoDialog?.let { page ->
             val (title, message) = when (page) {
-                SettingsInfoPage.About -> "About Liquid Player" to
-                    "Liquid Player is an Android video player for media stored on your device. " +
+                SettingsInfoPage.About -> "About LUCENT" to
+                    "LUCENT is an Android video player for media stored on your device. " +
                     "It discovers videos through Android's media library and can also open individual files. " +
                     "Playback and audio/subtitle decoding are handled by libVLC. " +
                     "Playback progress and per-video audio/subtitle preferences are saved locally.\n\n" +

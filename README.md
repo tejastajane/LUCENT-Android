@@ -1,4 +1,4 @@
-# Liquid Player for Android
+# LUCENT for Android
 
 A Kotlin + Jetpack Compose video player powered by libVLC and Kyant0's Backdrop Liquid Glass library.
 

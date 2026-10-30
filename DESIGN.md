@@ -1,4 +1,4 @@
-# Liquid Player design contract
+# LUCENT design contract
 
 The agreed visual direction is Apple-inspired neutral Liquid Glass, not generic blue glassmorphism.
 
