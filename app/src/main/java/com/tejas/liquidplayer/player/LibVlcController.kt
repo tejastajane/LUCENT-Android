@@ -5,7 +5,10 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import com.tejas.liquidplayer.data.TrackOption
@@ -34,6 +37,12 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     private var released = false
     private var contentDescriptor: ParcelFileDescriptor? = null
     private var cachedPlaybackFile: File? = null
+
+    private companion object {
+        const val MAX_PROVIDER_CACHE_BYTES = 4L * 1024L * 1024L * 1024L
+        const val MIN_FREE_SPACE_RESERVE_BYTES = 256L * 1024L * 1024L
+        const val PROGRESS_UPDATE_INTERVAL_BYTES = 1024L * 1024L
+    }
 
     fun attach(layout: VLCVideoLayout) {
         if (!viewsAttached && !released) {
@@ -78,43 +87,100 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
      * providers expose a pipe or descriptor that libVLC cannot seek correctly; the copy is
      * created only after the direct-descriptor path fails, and is deleted when playback ends.
      */
-    suspend fun retryUsingCachedCopy(uri: Uri): String? {
+    suspend fun retryUsingCachedCopy(
+        uri: Uri,
+        onProgress: (copiedBytes: Long, expectedBytes: Long?) -> Unit = { _, _ -> }
+    ): String? {
         if (released) return "The player has already been closed."
         if (uri.scheme != "content") return "This video provider does not support a local-cache retry."
 
         val cached = try {
             withContext(Dispatchers.IO) {
-                val displayName = runCatching {
+                val metadata = runCatching {
                     appContext.contentResolver.query(
                         uri,
-                        arrayOf(OpenableColumns.DISPLAY_NAME),
+                        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
                         null,
                         null,
                         null
                     )?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                        if (!cursor.moveToFirst()) null else {
+                            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                            val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                            val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                                cursor.getLong(sizeIndex).takeIf { it > 0L }
+                            } else null
+                            name to size
+                        }
                     }
-                }.getOrNull().orEmpty()
+                }.getOrNull()
+                val displayName = metadata?.first.orEmpty()
+                val expectedBytes = metadata?.second
+
+                // Leave 256 MiB for the OS and app state, and never let a provider copy
+                // consume an unbounded amount of cache when size metadata is missing.
+                val freeSpace = appContext.cacheDir.usableSpace
+                val safeCapacity = minOf(
+                    MAX_PROVIDER_CACHE_BYTES,
+                    (freeSpace - MIN_FREE_SPACE_RESERVE_BYTES).coerceAtLeast(0L)
+                )
+                if (safeCapacity <= 0L) {
+                    error("There isn't enough free storage to safely retry this provider video.")
+                }
+                if (expectedBytes != null && expectedBytes > safeCapacity) {
+                    error("This provider video is too large to cache safely with the available free storage.")
+                }
+                val copyLimit = expectedBytes ?: safeCapacity
                 val extension = displayName.substringAfterLast('.', "")
                     .takeIf { it.length in 2..5 && it.all(Char::isLetterOrDigit) }
                 val file = File.createTempFile(
-                    "liquid-vlc-retry-",
+                    "lucent-vlc-retry-",
                     extension?.let { ".$it" } ?: ".media",
                     appContext.cacheDir
                 )
+                var completed = false
                 try {
                     val input = appContext.contentResolver.openInputStream(uri)
                         ?: error("Android could not open this video as a readable stream.")
+                    var copiedBytes = 0L
+                    var nextProgressBytes = 0L
                     input.use { stream ->
-                        file.outputStream().buffered().use { output -> stream.copyTo(output) }
+                        file.outputStream().buffered().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val read = stream.read(buffer)
+                                if (read < 0) break
+                                if (copiedBytes + read > copyLimit) {
+                                    error("The provider stream exceeded its reported size or safe cache limit.")
+                                }
+                                output.write(buffer, 0, read)
+                                copiedBytes += read
+                                if (copiedBytes >= nextProgressBytes) {
+                                    withContext(Dispatchers.Main.immediate) {
+                                        onProgress(copiedBytes, expectedBytes)
+                                    }
+                                    nextProgressBytes = copiedBytes + PROGRESS_UPDATE_INTERVAL_BYTES
+                                }
+                            }
+                        }
                     }
-                    if (file.length() == 0L) error("The selected video is empty.")
+                    if (copiedBytes == 0L) error("The selected video is empty.")
+                    if (expectedBytes != null && copiedBytes != expectedBytes) {
+                        error("The provider returned an incomplete video stream.")
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        onProgress(copiedBytes, expectedBytes)
+                    }
+                    completed = true
                     file
-                } catch (error: Exception) {
-                    file.delete()
-                    throw error
+                } finally {
+                    if (!completed) file.delete()
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             Log.e("LiquidPlayer/VLC", "Unable to cache provider video: $uri", error)
             return "Couldn't read this video from Android storage: ${error.message ?: "unknown provider error"}"
@@ -131,7 +197,7 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
                 contentDescriptor = null
                 cachedPlaybackFile?.delete()
                 cachedPlaybackFile = cached
-                Log.i("LiquidPlayer/VLC", "Retrying playback from a local cache copy")
+                Log.i("LiquidPlayer/VLC", "Retrying playback from a bounded local cache copy")
                 player.play(Media(libVlc, cached.absolutePath))
                 null
             } catch (error: Exception) {
