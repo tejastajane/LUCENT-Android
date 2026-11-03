@@ -54,4 +54,15 @@ class VideoItemTest {
             )
         )
     }
+
+    @Test
+    fun mediaPreferenceIdAvoidsKnownStringHashCollisions() {
+        val firstUri = "content://media.example/Aa"
+        val secondUri = "content://media.example/BB"
+
+        assertEquals(firstUri.hashCode(), secondUri.hashCode())
+        assertEquals(64, mediaPreferenceId(firstUri).length)
+        assertNotEquals(mediaPreferenceId(firstUri), mediaPreferenceId(secondUri))
+        assertEquals(mediaPreferenceId(firstUri), mediaPreferenceId(firstUri))
+    }
 }
