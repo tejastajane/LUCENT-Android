@@ -70,7 +70,6 @@ fun LiquidToggle(
         Color(0xFF787880).copy(alpha = 0.36f)
     }
 
-    val checkedState = rememberUpdatedState(checked)
     val onCheckedChangeState = rememberUpdatedState(onCheckedChange)
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr

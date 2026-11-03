@@ -42,6 +42,12 @@ fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
 
 internal fun normalizeRelativePath(path: String): String = path.trim().trim('/')
 
+internal fun isResumablePlaybackPosition(savedPositionMs: Long, durationMs: Long): Boolean {
+    const val endThresholdMs = 1_500L
+    return savedPositionMs > endThresholdMs &&
+        (durationMs <= 0L || savedPositionMs < durationMs - endThresholdMs)
+}
+
 /**
  * Stable, collision-resistant identifier for media-specific preference keys.
  * MediaStore IDs are volume-relative and URI.hashCode() can collide; hash the full URI.

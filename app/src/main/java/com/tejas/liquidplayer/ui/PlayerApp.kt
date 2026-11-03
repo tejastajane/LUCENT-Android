@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.VideoRepository
 import com.tejas.liquidplayer.data.mediaPreferenceId
+import com.tejas.liquidplayer.data.isResumablePlaybackPosition
 import com.tejas.liquidplayer.data.sortVideosAscending
 import com.tejas.liquidplayer.player.VideoPlayerScreen
 import kotlinx.coroutines.CancellationException
@@ -323,8 +324,7 @@ fun LiquidPlayerApp(
                 "playback_position_${mediaPreferenceId(uriString)}",
                 playerPreferences.getLong("playback_position_${uriString.hashCode()}", 0L)
             )
-            savedPosition > 1_500L &&
-                (item.durationMs <= 0L || savedPosition < item.durationMs - 1_500L)
+            isResumablePlaybackPosition(savedPosition, item.durationMs)
         }
         val playTarget = resumableVideo ?: videos.maxByOrNull { it.dateAddedSeconds }
         val hasResumeHistory = resumableVideo != null && playTarget?.uri == resumableVideo.uri

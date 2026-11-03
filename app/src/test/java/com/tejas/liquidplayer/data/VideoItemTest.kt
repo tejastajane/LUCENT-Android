@@ -65,4 +65,24 @@ class VideoItemTest {
         assertNotEquals(mediaPreferenceId(firstUri), mediaPreferenceId(secondUri))
         assertEquals(mediaPreferenceId(firstUri), mediaPreferenceId(firstUri))
     }
+
+    @Test
+    fun resumeThresholdRejectsPositionsAtOrNearTheBeginning() {
+        assertEquals(false, isResumablePlaybackPosition(0L, 60_000L))
+        assertEquals(false, isResumablePlaybackPosition(1_500L, 60_000L))
+        assertEquals(true, isResumablePlaybackPosition(1_501L, 60_000L))
+    }
+
+    @Test
+    fun resumeThresholdDoesNotResumeAtTheEndOfKnownDuration() {
+        assertEquals(false, isResumablePlaybackPosition(58_500L, 60_000L))
+        assertEquals(false, isResumablePlaybackPosition(59_000L, 60_000L))
+        assertEquals(true, isResumablePlaybackPosition(58_499L, 60_000L))
+    }
+
+    @Test
+    fun resumeThresholdSupportsUnknownDuration() {
+        assertEquals(true, isResumablePlaybackPosition(2_000L, 0L))
+        assertEquals(false, isResumablePlaybackPosition(1_500L, 0L))
+    }
 }
