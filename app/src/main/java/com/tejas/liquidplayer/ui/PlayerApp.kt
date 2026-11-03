@@ -46,6 +46,7 @@ fun LiquidPlayerApp(
     var isRefreshing by remember { mutableStateOf(false) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var hasMediaManagementAccess by remember { mutableStateOf(canManageMedia(context)) }
+    var showMediaManagementPrompt by remember { mutableStateOf(false) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var lastPlayedVideo by remember(preferences) {
@@ -102,6 +103,32 @@ fun LiquidPlayerApp(
         ActivityResultContracts.StartActivityForResult()
     ) {
         hasMediaManagementAccess = canManageMedia(context)
+        if (!hasMediaManagementAccess) {
+            Toast.makeText(
+                context,
+                "Media management access wasn't enabled. Android may still ask before deleting individual files.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun dismissMediaManagementPrompt() {
+        preferences.edit().putBoolean("media_management_prompted", true).apply()
+        showMediaManagementPrompt = false
+    }
+
+    fun requestMediaManagementAccess() {
+        dismissMediaManagementPrompt()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            runCatching {
+                mediaManagementSettingsLauncher.launch(intent)
+            }.onFailure {
+                Toast.makeText(context, "Unable to open media management settings.", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     fun startMediaMutation(mutation: PendingMediaMutation) {
@@ -200,6 +227,15 @@ fun LiquidPlayerApp(
         }
     }
 
+    LaunchedEffect(hasVideoPermission, hasMediaManagementAccess) {
+        val alreadyPrompted = preferences.getBoolean("media_management_prompted", false)
+        showMediaManagementPrompt =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            hasVideoPermission &&
+            !hasMediaManagementAccess &&
+            !alreadyPrompted
+    }
+
     // Keep libVLC's native TextureView outside AnimatedContent's graphics-layer
     // transition. Preserve native surface ownership while the player is shown.
     val activeVideo = selectedVideo
@@ -241,6 +277,8 @@ fun LiquidPlayerApp(
             hasVideoPermission = hasVideoPermission,
             hasMediaManagementAccess = hasMediaManagementAccess,
             isRefreshing = isRefreshing,
+            showMediaManagementPrompt = showMediaManagementPrompt,
+            onDismissMediaManagementPrompt = ::dismissMediaManagementPrompt,
             onRequestMediaPermission = {
                 val permissions = when {
                     Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -252,18 +290,7 @@ fun LiquidPlayerApp(
                 }
                 mediaPermissionLauncher.launch(permissions)
             },
-            onRequestMediaManagementAccess = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                    }
-                    runCatching {
-                        mediaManagementSettingsLauncher.launch(intent)
-                    }.onFailure {
-                        Toast.makeText(context, "Unable to open media management settings.", Toast.LENGTH_LONG).show()
-                    }
-                }
-            },
+            onRequestMediaManagementAccess = ::requestMediaManagementAccess,
             onPlay = ::openVideo,
             onRenameVideo = { item, newName ->
                 startMediaMutation(PendingMediaMutation.Rename(item, newName))
