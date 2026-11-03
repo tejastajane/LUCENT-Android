@@ -279,7 +279,7 @@ fun VideoPlayerScreen(
     var cacheRetryJob by remember(video.uri) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
     var durationMs by remember(video.uri) { mutableLongStateOf(video.durationMs) }
-    val audioFocus = remember(context, controller) {
+    val audioFocus = remember(context, controller, video.uri) {
         PlaybackAudioFocus(context) {
             controller.player.pause()
             val current = runCatching { controller.player.time }
