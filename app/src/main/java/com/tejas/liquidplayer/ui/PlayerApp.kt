@@ -78,7 +78,8 @@ fun LiquidPlayerApp(
                 durationMs = playerPreferences.getLong("last_played_duration", 0L),
                 sizeBytes = playerPreferences.getLong("last_played_size", 0L),
                 dateAddedSeconds = playerPreferences.getLong("last_played_date", 0L),
-                mimeType = playerPreferences.getString("last_played_mime", null)
+                mimeType = playerPreferences.getString("last_played_mime", null),
+                volumeName = playerPreferences.getString("last_played_volume", null)
             )
         })
     }
@@ -291,6 +292,7 @@ fun LiquidPlayerApp(
             .putLong("last_played_size", item.sizeBytes)
             .putLong("last_played_date", item.dateAddedSeconds)
             .putString("last_played_mime", item.mimeType)
+            .putString("last_played_volume", item.volumeName)
             .apply()
     }
 
