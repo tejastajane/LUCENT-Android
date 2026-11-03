@@ -42,11 +42,11 @@ fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
 
 internal fun normalizeRelativePath(path: String): String = path.trim().trim('/')
 
-internal fun isResumablePlaybackPosition(savedPositionMs: Long, durationMs: Long): Boolean {
-    const val endThresholdMs = 1_500L
-    return savedPositionMs > endThresholdMs &&
-        (durationMs <= 0L || savedPositionMs < durationMs - endThresholdMs)
-}
+private const val RESUME_END_THRESHOLD_MS = 1_500L
+
+internal fun isResumablePlaybackPosition(savedPositionMs: Long, durationMs: Long): Boolean =
+    savedPositionMs > RESUME_END_THRESHOLD_MS &&
+        (durationMs <= 0L || savedPositionMs < durationMs - RESUME_END_THRESHOLD_MS)
 
 /**
  * Stable, collision-resistant identifier for media-specific preference keys.
