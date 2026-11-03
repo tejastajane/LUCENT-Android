@@ -159,6 +159,8 @@ fun MainLibraryUi(
     hasMediaScanError: Boolean,
     favouriteUris: Set<String>,
     hasMediaManagementAccess: Boolean,
+    showMediaManagementOnboarding: Boolean,
+    onMediaManagementOnboardingHandled: () -> Unit,
     isRefreshing: Boolean,
     onRequestMediaPermission: () -> Unit,
     onRequestMediaManagementAccess: () -> Unit,
@@ -188,6 +190,27 @@ fun MainLibraryUi(
             onConfirm = { activeOverlay = null }, onCancel = { activeOverlay = null }
         )
     }
+
+    LaunchedEffect(showMediaManagementOnboarding) {
+        if (showMediaManagementOnboarding && activeOverlay == null) {
+            activeOverlay = LibraryOverlayState.Message(
+                title = "Manage your media",
+                message = "Allow LUCENT to manage videos on your device. This lets LUCENT delete a video after its own confirmation, without an additional Android confirmation. Android opens the media management settings page once so you can grant access.",
+                confirmLabel = "Continue",
+                cancelLabel = "Not now",
+                onConfirm = {
+                    activeOverlay = null
+                    onMediaManagementOnboardingHandled()
+                    onRequestMediaManagementAccess()
+                },
+                onCancel = {
+                    activeOverlay = null
+                    onMediaManagementOnboardingHandled()
+                }
+            )
+        }
+    }
+
     BackHandler(enabled = selectedTab != 0 || searchExpanded || activeOverlay != null) {
         when (val overlay = activeOverlay) {
             is LibraryOverlayState.Message -> overlay.onCancel()
@@ -329,18 +352,10 @@ fun MainLibraryUi(
                 },
                 onDelete = {
                     val item = overlay.item
-                    val systemApprovalMessage = when {
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !hasMediaManagementAccess ->
-                            "Android will show its own approval dialog next. The video is not deleted unless you approve that system dialog."
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && hasMediaManagementAccess ->
-                            "Direct media deletion is enabled in LUCENT, so Android may not need to show another approval dialog."
-                        else ->
-                            "Android may show a separate system permission or approval dialog, depending on your device and storage permissions."
-                    }
                     activeOverlay = LibraryOverlayState.Message(
                         title = "Delete video?",
-                        message = "\"${item.name}\" will be permanently deleted from this device. This action cannot be undone.\n\n$systemApprovalMessage",
-                        confirmLabel = "Continue",
+                        message = "\"${item.name}\" will be permanently deleted from this device. This action cannot be undone.",
+                        confirmLabel = "Delete",
                         cancelLabel = "Cancel",
                         onConfirm = {
                             activeOverlay = null
@@ -713,9 +728,9 @@ private fun SettingsScreen(
                                     Icons.Default.Delete,
                                     "Direct media deletion",
                                     if (hasMediaManagementAccess) {
-                                        "Enabled — Android won't ask for every file"
+                                        "Enabled — LUCENT confirmation only"
                                     } else {
-                                        "Allow once to avoid repeated delete confirmations"
+                                        "Grant once for LUCENT-only delete confirmation"
                                     },
                                     onManageMediaAccess
                                 )
