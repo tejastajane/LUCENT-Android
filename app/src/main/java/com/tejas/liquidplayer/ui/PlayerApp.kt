@@ -43,6 +43,7 @@ fun LiquidPlayerApp(
 
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var mediaRefreshToken by remember { mutableIntStateOf(0) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var hasMediaManagementAccess by remember { mutableStateOf(canManageMedia(context)) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -185,12 +186,17 @@ fun LiquidPlayerApp(
     }
 
     LaunchedEffect(hasVideoPermission, mediaRefreshToken) {
-        videos = if (hasVideoPermission) {
-            withContext(Dispatchers.IO) {
-                runCatching { repository.loadVideos() }.getOrDefault(emptyList())
+        if (mediaRefreshToken > 0) isRefreshing = true
+        try {
+            videos = if (hasVideoPermission) {
+                withContext(Dispatchers.IO) {
+                    runCatching { repository.loadVideos() }.getOrDefault(emptyList())
+                }
+            } else {
+                emptyList()
             }
-        } else {
-            emptyList()
+        } finally {
+            if (mediaRefreshToken > 0) isRefreshing = false
         }
     }
 
@@ -234,6 +240,7 @@ fun LiquidPlayerApp(
             videos = videos,
             hasVideoPermission = hasVideoPermission,
             hasMediaManagementAccess = hasMediaManagementAccess,
+            isRefreshing = isRefreshing,
             onRequestMediaPermission = {
                 val permissions = when {
                     Build.VERSION.SDK_INT >= 34 -> arrayOf(
