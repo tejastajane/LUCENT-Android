@@ -156,10 +156,10 @@ fun MainLibraryUi(
     onTabSelected: (Int) -> Unit,
     videos: List<VideoItem>,
     hasVideoPermission: Boolean,
+    hasMediaScanError: Boolean,
+    favouriteUris: Set<String>,
     hasMediaManagementAccess: Boolean,
     isRefreshing: Boolean,
-    showMediaManagementPrompt: Boolean,
-    onDismissMediaManagementPrompt: () -> Unit,
     onRequestMediaPermission: () -> Unit,
     onRequestMediaManagementAccess: () -> Unit,
     onPlay: (VideoItem) -> Unit,
@@ -188,21 +188,6 @@ fun MainLibraryUi(
             onConfirm = { activeOverlay = null }, onCancel = { activeOverlay = null }
         )
     }
-    LaunchedEffect(showMediaManagementPrompt) {
-        if (showMediaManagementPrompt && activeOverlay == null) {
-            activeOverlay = LibraryOverlayState.Message(
-                title = "Manage your media",
-                message = "Allow LUCENT to manage videos on your device. With this one-time access, Android won't ask for confirmation every time you delete a video. You can change this permission later in Settings.",
-                confirmLabel = "Continue",
-                cancelLabel = "Not now",
-                onConfirm = { activeOverlay = null; onRequestMediaManagementAccess() },
-                onCancel = { activeOverlay = null; onDismissMediaManagementPrompt() }
-            )
-        } else if (!showMediaManagementPrompt &&
-            (activeOverlay as? LibraryOverlayState.Message)?.title == "Manage your media"
-        ) activeOverlay = null
-    }
-
     BackHandler(enabled = selectedTab != 0 || searchExpanded || activeOverlay != null) {
         when (val overlay = activeOverlay) {
             is LibraryOverlayState.Message -> overlay.onCancel()
@@ -248,12 +233,18 @@ fun MainLibraryUi(
                     when (tab) {
                         0 -> VideosScreen(
                             backdrop = backdrop, videos = videos, hasPermission = hasVideoPermission,
+                            hasScanError = hasMediaScanError, favouriteUris = favouriteUris,
                             onRequestPermission = onRequestMediaPermission, selectedFolder = selectedFolder,
                             onClearFolder = { selectedFolder = null }, onPlay = onPlay,
                             onChooseVideoFile = onChooseVideoFile,
-                            onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) }
+                            onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) },
+                            onRescan = onRescan
                         )
-                        1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) })
+                        1 -> FoldersScreen(
+                            backdrop, videos, hasVideoPermission,
+                            onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) },
+                            onRescan = onRescan
+                        )
                         3 -> SearchResultsScreen(
                             backdrop = backdrop, videos = videos, query = searchQuery,
                             hasPermission = hasVideoPermission, onRequestPermission = onRequestMediaPermission,
@@ -354,7 +345,11 @@ private fun SearchResultsScreen(
     Column(Modifier.fillMaxSize()) {
         Text("Search results", Modifier.padding(start = 22.dp, end = 18.dp, top = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
-        else if (filtered.isEmpty()) EmptyState(backdrop, "No matches", "Try another title or folder name.", "No results", {})
+        else if (filtered.isEmpty()) EmptyState(
+            backdrop,
+            "No matches",
+            "Try another title or folder name, or clear the search field above."
+        )
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRequestActions = onRequestActions) }
         }
@@ -371,7 +366,10 @@ private fun VideosScreen(
     onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onChooseVideoFile: () -> Unit,
-    onRequestActions: (VideoItem) -> Unit
+    onRequestActions: (VideoItem) -> Unit,
+    hasScanError: Boolean,
+    favouriteUris: Set<String>,
+    onRescan: () -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
     // Recompute directly from the selected chip. TV detection uses both release
@@ -387,10 +385,11 @@ private fun VideosScreen(
             "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder && item.durationMs >= 90L * 60L * 1_000L
             "TV Shows" -> looksLikeTvEpisode
             "Anime" -> isAnime
+            "Favourites" -> item.uri.toString() in favouriteUris
             "Latest" -> true
             else -> true
         }
-        matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
+        matchesCategory && (selectedFolder == null || item.folderPath == selectedFolder)
     }.let { items ->
         if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
     }
@@ -402,9 +401,13 @@ private fun VideosScreen(
         ) {
             Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         }
-        if (!selectedFolder.isNullOrBlank()) {
+        if (selectedFolder != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Folder: $selectedFolder", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text(
+                    "Folder: ${selectedFolder.replace("/", " › ").ifBlank { "Internal storage" }}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(onClick = onClearFolder) { Text("Clear", color = MaterialTheme.colorScheme.onBackground) }
             }
         }
@@ -412,7 +415,7 @@ private fun VideosScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("All", "Latest", "Movies", "TV Shows", "Anime").forEach { label ->
+            listOf("All", "Latest", "Movies", "TV Shows", "Anime", "Favourites").forEach { label ->
                 FilterChip(
                     selected = category == label,
                     onClick = { category = label },
@@ -439,10 +442,28 @@ private fun VideosScreen(
         } else if (filtered.isEmpty()) {
             EmptyState(
                 backdrop,
-                title = if (videos.isEmpty()) "No videos found" else "Nothing matches",
-                message = if (videos.isEmpty()) "Videos on your device will appear here after a media scan." else "Try another filter or search term.",
-                action = "Choose a video file",
-                onAction = onChooseVideoFile
+                title = when {
+                    hasScanError -> "Library scan failed"
+                    category == "Favourites" -> "No favourites yet"
+                    videos.isEmpty() -> "No videos found"
+                    else -> "Nothing matches"
+                },
+                message = when {
+                    hasScanError -> "LUCENT couldn't read the video library. Scan again to retry."
+                    category == "Favourites" -> "Favourite a video from the player tools and it will appear here."
+                    videos.isEmpty() -> "Videos on your device will appear here after a media scan."
+                    else -> "Try another filter or search term."
+                },
+                action = when {
+                    category == "Favourites" -> null
+                    hasScanError -> "Scan again"
+                    else -> "Choose a video file"
+                },
+                onAction = when {
+                    category == "Favourites" -> null
+                    hasScanError -> onRescan
+                    else -> onChooseVideoFile
+                }
             )
         } else {
             LazyColumn(
@@ -461,24 +482,35 @@ private fun FoldersScreen(
     backdrop: LayerBackdrop,
     videos: List<VideoItem>,
     hasPermission: Boolean,
-    onFolderSelected: (String) -> Unit
+    onFolderSelected: (String?) -> Unit,
+    onRescan: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         Text("Folder", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 18.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) {
-            EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected("") })
+            EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected(null) })
         } else {
-            val folders = videos.groupBy { it.folderName }.toList().sortedBy { it.first.lowercase(Locale.ROOT) }
+            val folders = videos.groupBy { it.folderPath }
+                .toList()
+                .sortedBy { it.first.lowercase(Locale.ROOT) }
             if (folders.isEmpty()) {
-                EmptyState(backdrop, title = "No folders yet", message = "Folders containing video files will appear here.", action = "Refresh library", onAction = { onFolderSelected("") })
+                EmptyState(
+                    backdrop,
+                    title = "No folders yet",
+                    message = "Folders containing video files will appear here.",
+                    action = "Refresh library",
+                    onAction = onRescan
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 176.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(folders, key = { it.first }) { (name, folderVideos) ->
-                        Column(Modifier.fillMaxWidth().clickable { onFolderSelected(name) }) {
+                    items(folders, key = { it.first }) { (path, folderVideos) ->
+                        val name = path.substringAfterLast('/').ifBlank { "Internal storage" }
+                        val breadcrumb = path.replace("/", " › ").ifBlank { "Internal storage" }
+                        Column(Modifier.fillMaxWidth().clickable { onFolderSelected(path) }) {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -487,7 +519,13 @@ private fun FoldersScreen(
                                 Spacer(Modifier.width(16.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                                    Text("${folderVideos.size} media files", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "$breadcrumb · ${folderVideos.size} media files",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
                                 }
                                 Icon(Icons.Default.ViewList, contentDescription = "Open folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -677,7 +715,7 @@ private fun SettingsScreen(
                                 "Browse the source code on GitHub",
                                 {
                                     runCatching {
-                                        uriHandler.openUri("https://github.com/tejastajane/LiquidPlayer-Android")
+                                        uriHandler.openUri("https://github.com/tejastajane/LUCENT-Android")
                                     }.onFailure {
                                         onShowInfoDialog(
                                             "Project source",
@@ -1035,8 +1073,8 @@ private fun EmptyState(
     backdrop: LayerBackdrop,
     title: String,
     message: String,
-    action: String,
-    onAction: () -> Unit,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
     secondaryAction: String? = null,
     onSecondaryAction: (() -> Unit)? = null
 ) {
@@ -1046,7 +1084,15 @@ private fun EmptyState(
                 Icon(Icons.Default.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(42.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = onAction, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background)) { Text(action) }
+                if (action != null && onAction != null) {
+                    Button(
+                        onClick = onAction,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.onBackground,
+                            contentColor = MaterialTheme.colorScheme.background
+                        )
+                    ) { Text(action) }
+                }
                 if (secondaryAction != null && onSecondaryAction != null) {
                     OutlinedButton(onClick = onSecondaryAction, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)) { Text(secondaryAction) }
                 }
