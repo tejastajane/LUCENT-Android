@@ -205,11 +205,25 @@ fun LiquidPlayerApp(
                     return
                 }
                 Build.VERSION.SDK_INT in Build.VERSION_CODES.Q..Build.VERSION_CODES.R -> {
-                    Toast.makeText(
-                        context,
-                        "Android 10 and 11 require system approval to delete shared videos. LUCENT-only deletion is supported on Android 12 and newer.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    // Try a direct delete for media LUCENT is already allowed to manage.
+                    // If Android requires per-file consent, stop here rather than opening
+                    // Android's delete approval UI; MANAGE_MEDIA is unavailable on API 29–30.
+                    when (val outcome = executeMediaMutation(context, mutation)) {
+                        is MediaMutationOutcome.Success -> {
+                            Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
+                            mediaRefreshToken++
+                        }
+                        is MediaMutationOutcome.NeedsApproval -> {
+                            Toast.makeText(
+                                context,
+                                "This Android version requires its own approval to delete this video. LUCENT-only deletion is available on Android 12 and newer.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        is MediaMutationOutcome.Failure -> {
+                            Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
+                        }
+                    }
                     return
                 }
             }
