@@ -434,9 +434,10 @@ fun VideoPlayerScreen(
     LaunchedEffect(showAspectRatioFeedback) {
         if (showAspectRatioFeedback) { delay(1_200L); showAspectRatioFeedback = false }
     }
-    LaunchedEffect(video.uri, gesturesEnabled) {
+    LaunchedEffect(video.uri, gesturesEnabled, controlsLocked) {
         if (
             gesturesEnabled &&
+            !controlsLocked &&
             !playerPreferences.getBoolean("horizontal_seek_hint_seen", false)
         ) {
             playerPreferences.edit().putBoolean("horizontal_seek_hint_seen", true).apply()
@@ -1057,7 +1058,7 @@ fun VideoPlayerScreen(
             }
         }
 
-        if (showSwipeSeekHint && !isInPictureInPictureMode && gesturesEnabled) {
+        if (showSwipeSeekHint && !isInPictureInPictureMode && gesturesEnabled && !controlsLocked) {
             KyantGlassSurface(
                 backdrop = backdrop,
                 modifier = Modifier.align(Alignment.BottomCenter)
