@@ -17,8 +17,6 @@ import kotlin.math.abs
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -154,7 +152,6 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kyant.backdrop.drawBackdrop
@@ -197,6 +194,7 @@ fun VideoPlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
@@ -398,40 +396,6 @@ fun VideoPlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    DisposableEffect(context, controller, audioFocus, isPlaying) {
-        if (isPlaying) {
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (
-                        intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY &&
-                        runCatching { controller.player.isPlaying }.getOrDefault(false)
-                    ) {
-                        controller.player.pause()
-                        audioFocus.abandon()
-                        Toast.makeText(
-                            context,
-                            "Playback paused because the audio output was disconnected.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-            }
-            val registered = runCatching {
-                ContextCompat.registerReceiver(
-                    context,
-                    receiver,
-                    IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
-                    ContextCompat.RECEIVER_NOT_EXPORTED
-                )
-            }.isSuccess
-            onDispose {
-                if (registered) runCatching { context.unregisterReceiver(receiver) }
-            }
-        } else {
-            onDispose { }
-        }
     }
 
     BackHandler(enabled = !isInPictureInPictureMode) {
