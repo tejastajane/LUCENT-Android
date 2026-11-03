@@ -74,7 +74,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -705,9 +704,33 @@ private fun SettingsScreen(
                             SettingItem(
                                 Icons.Default.Settings,
                                 "Playback gestures",
-                                "Enable double-tap seeking and touch shortcuts",
+                                "Enable double-tap, swipe-to-seek, and brightness/volume gestures",
                                 gesturesEnabled,
                                 onGesturesEnabledChanged
+                            )
+                        )
+                    )
+                }
+                item {
+                    SettingsActionSection(
+                        "Gesture guide",
+                        listOf(
+                            ActionItem(
+                                Icons.Default.Tune,
+                                "How playback gestures work",
+                                "Double-tap, swipe-to-seek, brightness, volume and the seek bar",
+                                {
+                                    onShowInfoDialog(
+                                        "Playback gesture guide",
+                                        "• Double-tap the left or right side to rewind or advance 10 seconds.\n\n" +
+                                            "• Double-tap the centre to play or pause.\n\n" +
+                                            "• Swipe horizontally across the picture: left rewinds, right advances. A preview shows the target time; the seek is committed when you lift your finger. Cancelling the gesture does not seek.\n\n" +
+                                            "• Swipe vertically on the left side to adjust screen brightness.\n\n" +
+                                            "• Swipe vertically on the right side to adjust Android media volume. Hardware volume keys and the on-screen indicator use the same media stream.\n\n" +
+                                            "• Tap or drag the timeline to seek precisely. It also exposes an adjustable progress control to accessibility services.\n\n" +
+                                            "When player controls are locked, gestures are disabled until you unlock them. Turn off Playback gestures in Settings to disable the gesture shortcuts."
+                                    )
+                                }
                             )
                         )
                     )
