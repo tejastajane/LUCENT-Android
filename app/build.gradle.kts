@@ -14,6 +14,16 @@ val hasStableReleaseSigning = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+// GitHub Actions supplies the workflow run number so each build has a monotonic
+// versionCode. Local builds retain a safe development fallback.
+val lucentVersionCode = System.getenv("LUCENT_VERSION_CODE")
+    ?.toIntOrNull()
+    ?.takeIf { it in 1..2_100_000_000 }
+    ?: 1
+val lucentVersionName = System.getenv("LUCENT_VERSION_NAME")
+    ?.takeIf { it.isNotBlank() }
+    ?: "0.1.0"
+
 android {
     namespace = "com.tejas.liquidplayer"
     compileSdk = 37
@@ -22,8 +32,8 @@ android {
         applicationId = "com.tejas.liquidplayer"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = lucentVersionCode
+        versionName = lucentVersionName
     }
 
     signingConfigs {
