@@ -1,7 +1,9 @@
 package com.tejas.liquidplayer
 
 import android.content.res.Configuration
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -9,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
@@ -18,6 +21,8 @@ import com.tejas.liquidplayer.ui.LiquidPlayerTheme
 
 class MainActivity : ComponentActivity() {
     private var pipMode by mutableStateOf(false)
+    private var incomingVideoUri by mutableStateOf<Uri?>(null)
+    private var incomingVideoRequestId by mutableIntStateOf(0)
 
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
@@ -29,6 +34,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureIncomingVideo(intent)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         val legacyPlayerPreferences = getSharedPreferences("liquid_player", MODE_PRIVATE)
@@ -56,9 +62,25 @@ class MainActivity : ComponentActivity() {
                         isDarkTheme = dark
                         preferences.edit().putBoolean("dark_theme", dark).apply()
                     },
-                    isInPictureInPictureMode = inPip
+                    isInPictureInPictureMode = inPip,
+                    incomingVideoUri = incomingVideoUri,
+                    incomingVideoRequestId = incomingVideoRequestId,
+                    onIncomingVideoConsumed = { incomingVideoUri = null }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureIncomingVideo(intent)
+    }
+
+    private fun captureIncomingVideo(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            incomingVideoUri = intent.data
+            incomingVideoRequestId++
         }
     }
 }
