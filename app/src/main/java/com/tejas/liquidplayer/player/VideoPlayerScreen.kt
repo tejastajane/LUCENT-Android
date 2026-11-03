@@ -929,7 +929,12 @@ fun VideoPlayerScreen(
                             },
                             onDrag = { change, dragAmount ->
                                 if (dragAxis == 0) {
-                                    dragAxis = if (abs(dragAmount.x) > abs(dragAmount.y) * 1.15f) 1 else 2
+                                    dragAxis = if (
+                                        resolvePlayerDragAxis(
+                                            change.position.x - dragStart.x,
+                                            change.position.y - dragStart.y
+                                        ) == PlayerDragAxis.Horizontal
+                                    ) 1 else 2
                                     if (dragAxis == 1) {
                                         seekStartMs = runCatching { controller.player.time }
                                             .getOrDefault(positionMs)
