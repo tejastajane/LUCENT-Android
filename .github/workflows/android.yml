@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - main2
+      - second-audit-implementation
       - "implementation/**"
   pull_request:
     branches:
