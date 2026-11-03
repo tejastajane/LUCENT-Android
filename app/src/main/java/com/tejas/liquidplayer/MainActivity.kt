@@ -31,7 +31,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
-        val preferences = getSharedPreferences("liquid_player", MODE_PRIVATE)
+        val legacyPlayerPreferences = getSharedPreferences("liquid_player", MODE_PRIVATE)
+        val preferences = getSharedPreferences("lucent_settings", MODE_PRIVATE)
+        if (!preferences.contains("dark_theme") && legacyPlayerPreferences.contains("dark_theme")) {
+            preferences.edit()
+                .putBoolean("dark_theme", legacyPlayerPreferences.getBoolean("dark_theme", true))
+                .apply()
+        }
         setContent {
             val inPip = pipMode
             var isDarkTheme by rememberSaveable { mutableStateOf(preferences.getBoolean("dark_theme", true)) }
