@@ -7,6 +7,7 @@ import android.content.ContentValues
 import android.widget.Toast
 import android.content.Intent
 import android.provider.MediaStore
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -43,6 +44,7 @@ fun LiquidPlayerApp(
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var mediaRefreshToken by remember { mutableIntStateOf(0) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
+    var hasMediaManagementAccess by remember { mutableStateOf(canManageMedia(context)) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var lastPlayedVideo by remember(preferences) {
@@ -73,19 +75,32 @@ fun LiquidPlayerApp(
         val mutation = pendingMediaMutation
         pendingMediaMutation = null
         if (result.resultCode == Activity.RESULT_OK && mutation != null) {
-            when (val outcome = executeMediaMutation(context, mutation)) {
-                is MediaMutationOutcome.Success -> {
-                    Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
-                    mediaRefreshToken++
-                }
-                is MediaMutationOutcome.NeedsApproval -> {
-                    Toast.makeText(context, "Android did not approve the media change.", Toast.LENGTH_SHORT).show()
-                }
-                is MediaMutationOutcome.Failure -> {
-                    Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
+            // MediaStore.createDeleteRequest performs the deletion itself after approval.
+            // Do not issue a second ContentResolver.delete for the same item.
+            if (mutation is PendingMediaMutation.Delete && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Toast.makeText(context, "Video deleted.", Toast.LENGTH_SHORT).show()
+                mediaRefreshToken++
+            } else {
+                when (val outcome = executeMediaMutation(context, mutation)) {
+                    is MediaMutationOutcome.Success -> {
+                        Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
+                        mediaRefreshToken++
+                    }
+                    is MediaMutationOutcome.NeedsApproval -> {
+                        Toast.makeText(context, "Android did not approve the media change.", Toast.LENGTH_SHORT).show()
+                    }
+                    is MediaMutationOutcome.Failure -> {
+                        Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
+    }
+
+    val mediaManagementSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        hasMediaManagementAccess = canManageMedia(context)
     }
 
     fun startMediaMutation(mutation: PendingMediaMutation) {
@@ -218,6 +233,7 @@ fun LiquidPlayerApp(
             onTabSelected = { selectedTab = it },
             videos = videos,
             hasVideoPermission = hasVideoPermission,
+            hasMediaManagementAccess = hasMediaManagementAccess,
             onRequestMediaPermission = {
                 val permissions = when {
                     Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -228,6 +244,18 @@ fun LiquidPlayerApp(
                     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
                 }
                 mediaPermissionLauncher.launch(permissions)
+            },
+            onRequestMediaManagementAccess = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    runCatching {
+                        mediaManagementSettingsLauncher.launch(intent)
+                    }.onFailure {
+                        Toast.makeText(context, "Unable to open media management settings.", Toast.LENGTH_LONG).show()
+                    }
+                }
             },
             onPlay = ::openVideo,
             onRenameVideo = { item, newName ->
@@ -257,6 +285,10 @@ fun LiquidPlayerApp(
             }
         )
     }
+}
+
+private fun canManageMedia(context: android.content.Context): Boolean {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)
 }
 
 private fun hasMediaPermission(context: android.content.Context): Boolean {
