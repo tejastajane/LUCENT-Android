@@ -89,13 +89,13 @@ fun LiquidToggle(
             pressedScale = 1.5f,
             onDragStarted = {},
             onDragStopped = {
-                val next = if (didDrag) {
-                    targetValue >= 0.5f
-                } else {
-                    !checkedState.value
+                // A tap is handled by the outer toggleable semantics/click target.
+                // Commit only a real drag so touch and accessibility cannot toggle twice.
+                if (didDrag) {
+                    val next = targetValue >= 0.5f
+                    fraction = if (next) 1f else 0f
+                    onCheckedChangeState.value(next)
                 }
-                fraction = if (next) 1f else 0f
-                onCheckedChangeState.value(next)
                 didDrag = false
             },
             onDrag = { _, dragAmount ->
