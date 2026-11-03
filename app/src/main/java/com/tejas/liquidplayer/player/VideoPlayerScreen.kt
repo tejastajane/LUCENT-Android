@@ -257,6 +257,8 @@ fun VideoPlayerScreen(
     var manualRotation by remember(video.uri) { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var playbackError by remember(video.uri) { mutableStateOf<String?>(null) }
+    var cacheRetryProgress by remember(video.uri) { mutableStateOf<Pair<Long, Long?>?>(null) }
+    var cacheRetryJob by remember(video.uri) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
     var durationMs by remember(video.uri) { mutableLongStateOf(video.durationMs) }
     var showRemainingTime by remember(video.uri) { mutableStateOf(false) }
@@ -319,6 +321,19 @@ fun VideoPlayerScreen(
             .apply()
     }
 
+    fun startCacheRetry() {
+        cacheRetryJob?.cancel()
+        playbackError = "Preparing a safe local copy for playback…"
+        cacheRetryProgress = 0L to null
+        cacheRetryJob = retryScope.launch {
+            val error = controller.retryUsingCachedCopy(video.uri) { copiedBytes, expectedBytes ->
+                cacheRetryProgress = copiedBytes to expectedBytes
+            }
+            cacheRetryProgress = null
+            cacheRetryJob = null
+            playbackError = error
+        }
+    }
 
     BackHandler(enabled = !isInPictureInPictureMode) {
         if (controlsLocked) {
@@ -456,8 +471,7 @@ fun VideoPlayerScreen(
         val immediateError = controller.play(video.uri)
         if (immediateError != null) {
             if (video.uri.scheme == "content" && cacheRetryAttempted.compareAndSet(false, true)) {
-                playbackError = "Retrying video through a local cache…"
-                controller.retryUsingCachedCopy(video.uri)?.let { playbackError = it }
+                startCacheRetry()
             } else {
                 playbackError = immediateError
             }
@@ -576,10 +590,7 @@ fun VideoPlayerScreen(
                         cacheRetryAttempted.compareAndSet(false, true)
                     mainHandler.post {
                         if (shouldRetry) {
-                            playbackError = "Retrying video through a local cache…"
-                            retryScope.launch {
-                                controller.retryUsingCachedCopy(video.uri)?.let { playbackError = it }
-                            }
+                            startCacheRetry()
                         } else {
                             playbackError = "libVLC failed to open this video even after the local-cache retry. Try another file; diagnostic details are logged."
                             Log.e("LiquidPlayer/VLC", "Playback failed for ${video.uri}")
@@ -703,17 +714,35 @@ fun VideoPlayerScreen(
         }
 
         playbackError?.let { message ->
-            Text(
-                text = message,
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium,
+            Column(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.82f))
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            )
+                    .background(Color.Black.copy(alpha = 0.86f))
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(message, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                cacheRetryProgress?.let { (copiedBytes, expectedBytes) ->
+                    val progressText = expectedBytes?.let {
+                        "${Formatter.formatFileSize(context, copiedBytes)} / ${Formatter.formatFileSize(context, it)}"
+                    } ?: "${Formatter.formatFileSize(context, copiedBytes)} copied"
+                    Text(progressText, color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                    TextButton(
+                        onClick = {
+                            cacheRetryJob?.cancel()
+                            cacheRetryJob = null
+                            cacheRetryProgress = null
+                            playbackError = "Local playback retry cancelled."
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            }
         }
 
         // Tap the unobstructed video area to reveal/hide controls.
