@@ -523,7 +523,8 @@ fun VideoPlayerScreen(
             if (mediaLength > 0L) durationMs = mediaLength
             isPlaying = playingNow
             // Reflect physical volume-button changes in the on-screen gesture indicator.
-            volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, systemVolumeMax)
+            val systemVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, systemVolumeMax)
+            if (systemVolume != volume) volume = systemVolume
             if (!resumePositionApplied && playingNow && mediaLength > 0L) {
                 if (savedPositionMs >= 1_500L && savedPositionMs < mediaLength - 2_500L) {
                     controller.seekTo(savedPositionMs)
@@ -741,6 +742,10 @@ fun VideoPlayerScreen(
                 }
                 .pointerInput(gesturesEnabled, video.uri, controlsLocked) {
                     if (gesturesEnabled && !controlsLocked) {
+                        var volumeAtDragStart = 0
+                        var accumulatedVolumeDelta = 0f
+                        var lastAppliedVolume = 0
+
                         detectVerticalDragGestures(
                             onDragStart = { start ->
                                 verticalGestureZone = when {
@@ -750,6 +755,15 @@ fun VideoPlayerScreen(
                                 }
                                 adjustmentMode = verticalGestureZone
                                 controlsInteractionToken++
+
+                                if (verticalGestureZone == 1) {
+                                    volumeAtDragStart = audioManager
+                                        .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                        .coerceIn(0, systemVolumeMax)
+                                    lastAppliedVolume = volumeAtDragStart
+                                    accumulatedVolumeDelta = 0f
+                                    if (volume != volumeAtDragStart) volume = volumeAtDragStart
+                                }
                             },
                             onVerticalDrag = { change, dragAmount ->
                                 controlsInteractionToken++
@@ -766,15 +780,31 @@ fun VideoPlayerScreen(
                                     }
                                     1 -> {
                                         adjustmentMode = 1
-                                        val volumeDelta = (dragAmount / size.height * systemVolumeMax * 1.375f).roundToInt()
-                                        val targetVolume = (volume - volumeDelta).coerceIn(0, systemVolumeMax)
-                                        if (targetVolume != volume) {
+                                        // Accumulate fractional motion across pointer events. Rounding
+                                        // every event independently dropped most small finger movements.
+                                        accumulatedVolumeDelta -= dragAmount / size.height * systemVolumeMax * 1.75f
+                                        val targetVolume = (volumeAtDragStart + accumulatedVolumeDelta.roundToInt())
+                                            .coerceIn(0, systemVolumeMax)
+                                        if (targetVolume != lastAppliedVolume) {
                                             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+                                            lastAppliedVolume = targetVolume
                                             volume = targetVolume
                                         }
                                     }
                                 }
                                 change.consume()
+                            },
+                            onDragEnd = {
+                                val finalVolume = audioManager
+                                    .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    .coerceIn(0, systemVolumeMax)
+                                if (volume != finalVolume) volume = finalVolume
+                            },
+                            onDragCancel = {
+                                val finalVolume = audioManager
+                                    .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    .coerceIn(0, systemVolumeMax)
+                                if (volume != finalVolume) volume = finalVolume
                             }
                         )
                     }
