@@ -34,6 +34,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -45,14 +46,18 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -83,8 +88,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -92,6 +95,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -106,6 +110,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -117,8 +123,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedRectangle
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -133,6 +146,19 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.text.DateFormat
 import java.util.Date
+
+private sealed interface LibraryOverlayState {
+    data class Message(
+        val title: String,
+        val message: String,
+        val confirmLabel: String = "Okay",
+        val cancelLabel: String? = null,
+        val onConfirm: () -> Unit,
+        val onCancel: () -> Unit
+    ) : LibraryOverlayState
+    data class RenameVideo(val item: VideoItem) : LibraryOverlayState
+    data class VideoActions(val item: VideoItem) : LibraryOverlayState
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -165,16 +191,36 @@ fun MainLibraryUi(
     var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    var activeOverlay by remember { mutableStateOf<LibraryOverlayState?>(null) }
+    val context = LocalContext.current
+    val showMessage: (String, String) -> Unit = { title, message ->
+        activeOverlay = LibraryOverlayState.Message(
+            title = title, message = message, confirmLabel = "Done",
+            onConfirm = { activeOverlay = null }, onCancel = { activeOverlay = null }
+        )
+    }
+    LaunchedEffect(showMediaManagementPrompt) {
+        if (showMediaManagementPrompt && activeOverlay == null) {
+            activeOverlay = LibraryOverlayState.Message(
+                title = "Manage your media",
+                message = "Allow LUCENT to manage videos on your device. With this one-time access, Android won't ask for confirmation every time you delete a video. You can change this permission later in Settings.",
+                confirmLabel = "Continue",
+                cancelLabel = "Not now",
+                onConfirm = { activeOverlay = null; onRequestMediaManagementAccess() },
+                onCancel = { activeOverlay = null; onDismissMediaManagementPrompt() }
+            )
+        } else if (!showMediaManagementPrompt &&
+            (activeOverlay as? LibraryOverlayState.Message)?.title == "Manage your media"
+        ) activeOverlay = null
+    }
 
-    BackHandler(enabled = selectedTab != 0 || searchExpanded) {
-        when {
-            searchExpanded -> {
-                searchExpanded = false
-                searchQuery = ""
-            }
-            selectedTab != 0 -> {
-                selectedFolder = null
-                onTabSelected(0)
+    BackHandler(enabled = selectedTab != 0 || searchExpanded || activeOverlay != null) {
+        when (val overlay = activeOverlay) {
+            is LibraryOverlayState.Message -> overlay.onCancel()
+            is LibraryOverlayState.RenameVideo, is LibraryOverlayState.VideoActions -> activeOverlay = null
+            null -> when {
+                searchExpanded -> { searchExpanded = false; searchQuery = "" }
+                selectedTab != 0 -> { selectedFolder = null; onTabSelected(0) }
             }
         }
     }
@@ -211,9 +257,20 @@ fun MainLibraryUi(
                     label = "videos-folders-settings-transition"
                 ) { tab ->
                     when (tab) {
-                        0 -> VideosScreen(backdrop, videos, hasVideoPermission, onRequestMediaPermission, selectedFolder, onClearFolder = { selectedFolder = null }, onPlay = onPlay, onChooseVideoFile = onChooseVideoFile, onRenameVideo = onRenameVideo, onDeleteVideo = onDeleteVideo)
+                        0 -> VideosScreen(
+                            backdrop = backdrop, videos = videos, hasPermission = hasVideoPermission,
+                            onRequestPermission = onRequestMediaPermission, selectedFolder = selectedFolder,
+                            onClearFolder = { selectedFolder = null }, onPlay = onPlay,
+                            onChooseVideoFile = onChooseVideoFile,
+                            onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) }
+                        )
                         1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) })
-                        3 -> SearchResultsScreen(backdrop, videos, searchQuery, hasVideoPermission, onRequestMediaPermission, onPlay, onRenameVideo, onDeleteVideo)
+                        3 -> SearchResultsScreen(
+                            backdrop = backdrop, videos = videos, query = searchQuery,
+                            hasPermission = hasVideoPermission, onRequestPermission = onRequestMediaPermission,
+                            onPlay = onPlay,
+                            onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) }
+                        )
                         else -> SettingsScreen(
                             hardwareAcceleration = hardwareAcceleration,
                             onHardwareAccelerationChanged = onHardwareAccelerationChanged,
@@ -224,7 +281,8 @@ fun MainLibraryUi(
                             onRescan = onRescan,
                             onChooseVideoFile = onChooseVideoFile,
                             hasMediaManagementAccess = hasMediaManagementAccess,
-                            onManageMediaAccess = onRequestMediaManagementAccess
+                            onManageMediaAccess = onRequestMediaManagementAccess,
+                            onShowInfoDialog = showMessage
                         )
                     }
                 }
@@ -254,23 +312,41 @@ fun MainLibraryUi(
             onSearchQueryChange = { searchQuery = it },
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
         )
-        if (showMediaManagementPrompt) {
-            GlassDialog(
+        when (val overlay = activeOverlay) {
+            is LibraryOverlayState.Message -> KyantMessageDialog(
+                backdrop, overlay.title, overlay.message, overlay.cancelLabel, overlay.confirmLabel,
+                overlay.onCancel, overlay.onCancel, overlay.onConfirm
+            )
+            is LibraryOverlayState.RenameVideo -> KyantRenameDialog(
+                backdrop, overlay.item,
+                onDismissRequest = { activeOverlay = null },
+                onSave = { item, name -> activeOverlay = null; onRenameVideo(item, name) }
+            )
+            is LibraryOverlayState.VideoActions -> KyantVideoActionSheet(
                 backdrop = backdrop,
-                title = "Manage your media",
-                onDismissRequest = onDismissMediaManagementPrompt,
-                content = {
-                    Text(
-                        "Allow LUCENT to manage videos on your device. With this one-time access, Android won't ask for confirmation every time you delete a video. You can change this permission later in Settings.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
+                onDismissRequest = { activeOverlay = null },
+                onInformation = {
+                    activeOverlay = LibraryOverlayState.Message(
+                        "Information", videoInformationText(context, overlay.item), "Done",
+                        onConfirm = { activeOverlay = null }, onCancel = { activeOverlay = null }
                     )
                 },
-                actions = {
-                    TextButton(onClick = onDismissMediaManagementPrompt) { Text("Not now") }
-                    TextButton(onClick = onRequestMediaManagementAccess) { Text("Continue") }
-                }
+                onRename = { activeOverlay = LibraryOverlayState.RenameVideo(overlay.item) },
+                onShare = {
+                    val item = overlay.item
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = item.mimeType?.takeIf { it.startsWith("video/") } ?: "video/*"
+                        putExtra(Intent.EXTRA_STREAM, item.uri)
+                        clipData = ClipData.newUri(context.contentResolver, item.name, item.uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    runCatching { context.startActivity(Intent.createChooser(shareIntent, "Share video")) }
+                        .onFailure { Toast.makeText(context, "Unable to share this video.", Toast.LENGTH_SHORT).show() }
+                    activeOverlay = null
+                },
+                onDelete = { activeOverlay = null; onDeleteVideo(overlay.item) }
             )
+            null -> Unit
         }
     }
 }
@@ -283,8 +359,7 @@ private fun SearchResultsScreen(
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
     onPlay: (VideoItem) -> Unit,
-    onRenameVideo: (VideoItem, String) -> Unit,
-    onDeleteVideo: (VideoItem) -> Unit
+    onRequestActions: (VideoItem) -> Unit
 ) {
     val filtered = remember(videos, query) { sortVideosAscending(videos.filter { it.name.contains(query, ignoreCase = true) || it.relativePath.contains(query, ignoreCase = true) }) }
     Column(Modifier.fillMaxSize()) {
@@ -292,7 +367,7 @@ private fun SearchResultsScreen(
         if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
         else if (filtered.isEmpty()) EmptyState(backdrop, "No matches", "Try another title or folder name.", "No results", {})
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRename = onRenameVideo, onDelete = onDeleteVideo) }
+            items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRequestActions = onRequestActions) }
         }
     }
 }
@@ -307,8 +382,7 @@ private fun VideosScreen(
     onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onChooseVideoFile: () -> Unit,
-    onRenameVideo: (VideoItem, String) -> Unit,
-    onDeleteVideo: (VideoItem) -> Unit
+    onRequestActions: (VideoItem) -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
     // Recompute directly from the selected chip. TV detection uses both release
@@ -387,7 +461,7 @@ private fun VideosScreen(
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRename = onRenameVideo, onDelete = onDeleteVideo) }
+                items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRequestActions = onRequestActions) }
             }
         }
     }
@@ -447,11 +521,11 @@ private fun SettingsScreen(
     onRescan: () -> Unit,
     onChooseVideoFile: () -> Unit,
     hasMediaManagementAccess: Boolean,
-    onManageMediaAccess: () -> Unit
+    onManageMediaAccess: () -> Unit,
+    onShowInfoDialog: (String, String) -> Unit
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    var infoDialog by remember { mutableStateOf<SettingsInfoPage?>(null) }
     val appVersion = remember(context) {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "Unknown"
@@ -590,13 +664,23 @@ private fun SettingsScreen(
                                 Icons.Default.Info,
                                 "About LUCENT",
                                 "Version $appVersion · Local video playback",
-                                { infoDialog = SettingsInfoPage.About }
+                                {
+                                    onShowInfoDialog(
+                                        "About LUCENT",
+                                        "LUCENT is an Android video player for media stored on your device. It discovers videos through Android's media library and can also open individual files. Playback and audio/subtitle decoding are handled by libVLC. Playback progress and per-video audio/subtitle preferences are saved locally.\n\nVersion $appVersion"
+                                    )
+                                }
                             ),
                             ActionItem(
                                 Icons.Default.Favorite,
                                 "Designed around Liquid Glass",
                                 "Kyant0 Backdrop · Blur, refraction and highlights",
-                                { infoDialog = SettingsInfoPage.LiquidGlass }
+                                {
+                                    onShowInfoDialog(
+                                        "Liquid Glass design",
+                                        "The interface uses Kyant0 Backdrop (version 2.0.1) for real backdrop blur, lens refraction, highlights and shadows in Jetpack Compose. The glass surfaces use neutral white, grey and black tones rather than a blue-tinted material."
+                                    )
+                                }
                             ),
                             ActionItem(
                                 Icons.Default.Bookmark,
@@ -606,7 +690,10 @@ private fun SettingsScreen(
                                     runCatching {
                                         uriHandler.openUri("https://github.com/tejastajane/LiquidPlayer-Android")
                                     }.onFailure {
-                                        infoDialog = SettingsInfoPage.ProjectLinkUnavailable
+                                        onShowInfoDialog(
+                                            "Project source",
+                                            "The project page could not be opened automatically. Visit: https://github.com/tejastajane/LiquidPlayer-Android"
+                                        )
                                     }
                                 }
                             )
@@ -615,40 +702,10 @@ private fun SettingsScreen(
                 }
             }
         }
-        infoDialog?.let { page ->
-            val (title, message) = when (page) {
-                SettingsInfoPage.About -> "About LUCENT" to
-                    "LUCENT is an Android video player for media stored on your device. " +
-                    "It discovers videos through Android's media library and can also open individual files. " +
-                    "Playback and audio/subtitle decoding are handled by libVLC. " +
-                    "Playback progress and per-video audio/subtitle preferences are saved locally.\n\n" +
-                    "Version $appVersion"
-                SettingsInfoPage.LiquidGlass -> "Liquid Glass design" to
-                    "The interface uses Kyant0 Backdrop (version 2.0.1) for real backdrop blur, lens refraction, " +
-                    "highlights and shadows in Jetpack Compose. The glass surfaces use neutral white, grey and " +
-                    "black tones rather than a blue-tinted material."
-                SettingsInfoPage.ProjectLinkUnavailable -> "Project source" to
-                    "The project page could not be opened automatically. Visit: " +
-                    "https://github.com/tejastajane/LiquidPlayer-Android"
-            }
-            GlassDialog(
-                backdrop = toggleBackdrop,
-                title = title,
-                onDismissRequest = { infoDialog = null },
-                content = { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                actions = {
-                    TextButton(onClick = { infoDialog = null }) { Text("Done") }
-                }
-            )
-        }
     }
 }
 
-private enum class SettingsInfoPage {
-    About,
-    LiquidGlass,
-    ProjectLinkUnavailable
-}
+
 
 private data class SettingItem(
     val icon: ImageVector,
@@ -726,8 +783,7 @@ private fun VideoRow(
     backdrop: LayerBackdrop,
     item: VideoItem,
     onClick: () -> Unit,
-    onRename: (VideoItem, String) -> Unit,
-    onDelete: (VideoItem) -> Unit
+    onRequestActions: (VideoItem) -> Unit
 ) {
     val context = LocalContext.current
     val thumbnail by produceState<Bitmap?>(initialValue = null, item.uri) {
@@ -748,11 +804,6 @@ private fun VideoRow(
         val saved = preferences.getLong("playback_position_" + item.uri.toString().hashCode(), 0L)
         if (item.durationMs > 0L) (saved.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     }
-    var showActionsSheet by remember(item.id) { mutableStateOf(false) }
-    var showInfoDialog by remember(item.id) { mutableStateOf(false) }
-    var showRenameDialog by remember(item.id) { mutableStateOf(false) }
-    var renameValue by remember(item.id, item.name) { mutableStateOf(item.name) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 8.dp),
@@ -774,146 +825,96 @@ private fun VideoRow(
             Text(item.folderName, color = Color(0xFFAAAAAA), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(2.dp))
-        IconButton(onClick = { showActionsSheet = true }) {
+        IconButton(onClick = { onRequestActions(item) }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Video options", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
         }
     }
 
-    if (showActionsSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showActionsSheet = false },
-            sheetState = sheetState,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp
-        ) {
-            GlassSurface(
-                backdrop = backdrop,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                cornerRadius = 28.dp,
-                surfaceAlpha = 0.055f,
-                navMaterial = true
-            ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
-                    VideoActionItem(Icons.Default.Info, "Information") {
-                        showActionsSheet = false
-                        showInfoDialog = true
-                    }
-                    VideoActionItem(Icons.Default.Edit, "Rename") {
-                        renameValue = item.name
-                        showActionsSheet = false
-                        showRenameDialog = true
-                    }
-                    VideoActionItem(Icons.Default.Share, "Share") {
-                        showActionsSheet = false
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = item.mimeType?.takeIf { it.startsWith("video/") } ?: "video/*"
-                            putExtra(Intent.EXTRA_STREAM, item.uri)
-                            clipData = ClipData.newUri(context.contentResolver, item.name, item.uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        runCatching {
-                            context.startActivity(Intent.createChooser(shareIntent, "Share video"))
-                        }.onFailure {
-                            Toast.makeText(context, "Unable to share this video.", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    VideoActionItem(Icons.Default.Delete, "Delete") {
-                        showActionsSheet = false
-                        onDelete(item)
-                    }
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-        }
-    }
-
-    if (showInfoDialog) {
-        val details = buildString {
-            appendLine("File name: " + item.name)
-            appendLine("Folder: " + item.folderName)
-            appendLine("Location: " + item.relativePath)
-            if (item.sizeBytes > 0L) appendLine("Size: " + Formatter.formatFileSize(context, item.sizeBytes))
-            if (item.durationMs > 0L) appendLine("Duration: " + formatDuration(item.durationMs))
-            item.mimeType?.let { appendLine("Format: " + it.substringAfter('/').uppercase(Locale.ROOT)) }
-            if (item.dateAddedSeconds > 0L) append("Added: " + DateFormat.getDateTimeInstance().format(Date(item.dateAddedSeconds * 1_000L)))
-        }
-        GlassDialog(
-            backdrop = backdrop,
-            title = "Information",
-            onDismissRequest = { showInfoDialog = false },
-            content = { Text(details, style = MaterialTheme.typography.bodyMedium) },
-            actions = {
-                TextButton(onClick = { showInfoDialog = false }) { Text("Done") }
-            }
-        )
-    }
-
-    if (showRenameDialog) {
-        GlassDialog(
-            backdrop = backdrop,
-            title = "Rename video",
-            onDismissRequest = { showRenameDialog = false },
-            content = {
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = renameValue,
-                    onValueChange = { renameValue = it },
-                    singleLine = true,
-                    label = { Text("File name") }
-                )
-            },
-            actions = {
-                TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
-                TextButton(
-                    onClick = {
-                        val requestedName = renameValue.trim()
-                        if (requestedName.isNotBlank() && requestedName != item.name) {
-                            val extension = item.name.substringAfterLast('.', "")
-                            val finalName = if (extension.isNotBlank() && !requestedName.contains('.')) {
-                                requestedName + "." + extension
-                            } else requestedName
-                            onRename(item, finalName)
-                        }
-                        showRenameDialog = false
-                    },
-                    enabled = renameValue.isNotBlank()
-                ) { Text("Save") }
-            }
-        )
-    }
 
 }
 
+@Composable
+private fun KyantGlassSurface(
+    backdrop: Backdrop,
+    modifier: Modifier = Modifier,
+    shape: Shape,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val tint = if (light) Color(0xFFFAFAFA).copy(alpha = 0.6f) else Color(0xFF121212).copy(alpha = 0.4f)
+    Box(
+        modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                colorControls(brightness = if (light) 0.2f else 0f, saturation = 1.5f)
+                blur(if (light) 16.dp.toPx() else 8.dp.toPx())
+                lens(24.dp.toPx(), 48.dp.toPx(), depthEffect = true)
+            },
+            highlight = { Highlight.Plain },
+            onDrawSurface = { drawRect(tint) }
+        ),
+        content = content
+    )
+}
 
 @Composable
-private fun GlassDialog(
+private fun KyantOverlayScrim(onDismissRequest: () -> Unit) {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val tint = if (light) Color(0xFF29293A).copy(alpha = 0.23f) else Color(0xFF121212).copy(alpha = 0.56f)
+    Box(Modifier.fillMaxSize().background(tint).clickable(onClick = onDismissRequest))
+}
+
+@Composable
+private fun KyantButton(
+    label: String,
+    primary: Boolean,
+    light: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val foreground = if (light) Color.Black else Color.White
+    val accent = if (light) Color(0xFF0088FF) else Color(0xFF0091FF)
+    val tint = if (light) Color(0xFFFAFAFA).copy(alpha = 0.6f) else Color(0xFF121212).copy(alpha = 0.4f)
+    Row(
+        modifier.clip(Capsule()).background(if (primary) accent else tint.copy(alpha = 0.2f))
+            .clickable(onClick = onClick).height(48.dp).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(label, color = if (primary) Color.White else foreground, fontSize = 16.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun KyantDialogCard(
     backdrop: Backdrop,
     title: String,
     onDismissRequest: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
     actions: @Composable RowScope.() -> Unit
 ) {
-    Dialog(onDismissRequest = onDismissRequest) {
-        GlassSurface(
-            backdrop = backdrop,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-            cornerRadius = 30.dp,
-            surfaceAlpha = 0.055f,
-            navMaterial = true
+    Box(Modifier.fillMaxSize()) {
+        KyantOverlayScrim(onDismissRequest)
+        val interaction = remember { MutableInteractionSource() }
+        KyantGlassSurface(
+            backdrop,
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp)
+                .widthIn(max = 520.dp).fillMaxWidth()
+                .clickable(interactionSource = interaction, indication = null) {},
+            shape = RoundedRectangle(48.dp)
         ) {
-            Column(
-                Modifier.fillMaxWidth().padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Column(Modifier.fillMaxWidth()) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    Modifier.padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 12.dp),
+                    color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color.Black else Color.White,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp, fontWeight = FontWeight.Medium)
                 )
                 content()
                 Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    Modifier.padding(start = 24.dp, top = 12.dp, end = 24.dp, bottom = 24.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     content = actions
                 )
@@ -921,6 +922,130 @@ private fun GlassDialog(
         }
     }
 }
+
+@Composable
+private fun KyantMessageDialog(
+    backdrop: Backdrop,
+    title: String,
+    message: String,
+    cancelLabel: String?,
+    confirmLabel: String,
+    onDismissRequest: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val foreground = if (light) Color.Black else Color.White
+    KyantDialogCard(
+        backdrop, title, onDismissRequest,
+        content = {
+            Text(
+                message,
+                Modifier.then(if (light) Modifier else Modifier.graphicsLayer(blendMode = BlendMode.Plus))
+                    .padding(horizontal = 24.dp, vertical = 12.dp).heightIn(max = 300.dp)
+                    .verticalScroll(rememberScrollState()),
+                color = foreground.copy(alpha = 0.68f),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        actions = {
+            if (cancelLabel != null) KyantButton(cancelLabel, false, light, onCancel, Modifier.weight(1f))
+            else Spacer(Modifier.weight(1f))
+            KyantButton(confirmLabel, true, light, onConfirm, Modifier.weight(1f))
+        }
+    )
+}
+
+@Composable
+private fun KyantRenameDialog(
+    backdrop: Backdrop,
+    item: VideoItem,
+    onDismissRequest: () -> Unit,
+    onSave: (VideoItem, String) -> Unit
+) {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val foreground = if (light) Color.Black else Color.White
+    var value by remember(item.uri, item.name) { mutableStateOf(item.name) }
+    KyantDialogCard(
+        backdrop, "Rename video", onDismissRequest,
+        content = {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
+                Text("File name", color = foreground.copy(alpha = 0.68f), style = MaterialTheme.typography.labelMedium)
+                BasicTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = foreground),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .background(if (light) Color.Black.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp, vertical = 14.dp)
+                )
+            }
+        },
+        actions = {
+            KyantButton("Cancel", false, light, onDismissRequest, Modifier.weight(1f))
+            KyantButton(
+                "Save", true, light,
+                onClick = {
+                    val requested = value.trim()
+                    if (requested.isNotBlank()) {
+                        val ext = item.name.substringAfterLast('.', "")
+                        onSave(item, if (ext.isNotBlank() && !requested.contains('.')) "$requested.$ext" else requested)
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    )
+}
+
+@Composable
+private fun KyantVideoActionSheet(
+    backdrop: Backdrop,
+    onDismissRequest: () -> Unit,
+    onInformation: () -> Unit,
+    onRename: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Box(Modifier.fillMaxSize()) {
+        KyantOverlayScrim(onDismissRequest)
+        val interaction = remember { MutableInteractionSource() }
+        KyantGlassSurface(
+            backdrop,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .clickable(interactionSource = interaction, indication = null) {},
+            shape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+        ) {
+            Column(
+                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Box(
+                    Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp)
+                        .width(36.dp).height(4.dp).clip(Capsule())
+                        .background(if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color.Black.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.22f))
+                )
+                VideoActionItem(Icons.Default.Info, "Information", onInformation)
+                VideoActionItem(Icons.Default.Edit, "Rename", onRename)
+                VideoActionItem(Icons.Default.Share, "Share", onShare)
+                VideoActionItem(Icons.Default.Delete, "Delete", onDelete)
+            }
+        }
+    }
+}
+
+private fun videoInformationText(context: android.content.Context, item: VideoItem): String =
+    buildString {
+        appendLine("File name: " + item.name)
+        appendLine("Folder: " + item.folderName)
+        appendLine("Location: " + item.relativePath)
+        if (item.sizeBytes > 0L) appendLine("Size: " + Formatter.formatFileSize(context, item.sizeBytes))
+        if (item.durationMs > 0L) appendLine("Duration: " + formatDuration(item.durationMs))
+        item.mimeType?.let { appendLine("Format: " + it.substringAfter('/').uppercase(Locale.ROOT)) }
+        if (item.dateAddedSeconds > 0L) append("Added: " + DateFormat.getDateTimeInstance().format(Date(item.dateAddedSeconds * 1_000L)))
+    }
 
 @Composable
 private fun VideoActionItem(
