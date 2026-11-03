@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.VideoRepository
+import com.tejas.liquidplayer.data.mediaPreferenceId
 import com.tejas.liquidplayer.data.sortVideosAscending
 import com.tejas.liquidplayer.player.VideoPlayerScreen
 import kotlinx.coroutines.CancellationException
@@ -65,7 +66,7 @@ fun LiquidPlayerApp(
     var lastPlayedVideo by remember(playerPreferences) {
         mutableStateOf(playerPreferences.getString("last_played_uri", null)?.let { savedUri ->
             VideoItem(
-                id = savedUri.hashCode().toLong(),
+                id = mediaPreferenceId(savedUri).take(15).toLong(16),
                 uri = Uri.parse(savedUri),
                 name = playerPreferences.getString("last_played_name", "Last played video") ?: "Last played video",
                 relativePath = playerPreferences.getString("last_played_path", "Recent/") ?: "Recent/",
@@ -257,7 +258,7 @@ fun LiquidPlayerApp(
             val name = queryDisplayName(context, uri) ?: "Selected video"
             openVideo(
                 VideoItem(
-                    id = uri.toString().hashCode().toLong(),
+                    id = mediaPreferenceId(uri.toString()).take(15).toLong(16),
                     uri = uri,
                     name = name,
                     relativePath = "Selected files/",
@@ -317,9 +318,10 @@ fun LiquidPlayerApp(
         // Resume only when the previous item has a meaningful, unfinished position.
         // Otherwise the pill must play the newest available library video.
         val resumableVideo = lastPlayedVideo?.takeIf { item ->
+            val uriString = item.uri.toString()
             val savedPosition = playerPreferences.getLong(
-                "playback_position_${item.uri.toString().hashCode()}",
-                0L
+                "playback_position_${mediaPreferenceId(uriString)}",
+                playerPreferences.getLong("playback_position_${uriString.hashCode()}", 0L)
             )
             savedPosition > 1_500L &&
                 (item.durationMs <= 0L || savedPosition < item.durationMs - 1_500L)
@@ -335,7 +337,13 @@ fun LiquidPlayerApp(
             isRefreshing = isRefreshing,
             hasMediaScanError = hasMediaScanError,
             favouriteUris = videos.asSequence()
-                .filter { playerPreferences.getBoolean("favourite_${it.uri.toString().hashCode()}", false) }
+                .filter { item ->
+                    val uriString = item.uri.toString()
+                    playerPreferences.getBoolean(
+                        "favourite_${mediaPreferenceId(uriString)}",
+                        playerPreferences.getBoolean("favourite_${uriString.hashCode()}", false)
+                    )
+                }
                 .map { it.uri.toString() }
                 .toSet(),
             onRequestMediaPermission = {
