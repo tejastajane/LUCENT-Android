@@ -318,6 +318,7 @@ fun VideoPlayerScreen(
     var seekFeedbackAmountMs by remember { mutableLongStateOf(0L) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var swipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
+    var showSwipeSeekHint by remember(video.uri) { mutableStateOf(false) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
     var showAspectRatioFeedback by remember { mutableStateOf(false) }
@@ -430,6 +431,19 @@ fun VideoPlayerScreen(
     }
     LaunchedEffect(showAspectRatioFeedback) {
         if (showAspectRatioFeedback) { delay(1_200L); showAspectRatioFeedback = false }
+    }
+    LaunchedEffect(video.uri, gesturesEnabled) {
+        if (
+            gesturesEnabled &&
+            !playerPreferences.getBoolean("horizontal_seek_hint_seen", false)
+        ) {
+            playerPreferences.edit().putBoolean("horizontal_seek_hint_seen", true).apply()
+            showSwipeSeekHint = true
+            delay(6_000L)
+            showSwipeSeekHint = false
+        } else {
+            showSwipeSeekHint = false
+        }
     }
     // A new video inherits the last brightness selected in the player.
     LaunchedEffect(video.uri, activity) {
@@ -1022,6 +1036,32 @@ fun VideoPlayerScreen(
                     color = Color.White.copy(alpha = 0.76f),
                     style = MaterialTheme.typography.labelSmall
                 )
+            }
+        }
+
+        if (showSwipeSeekHint && !isInPictureInPictureMode && gesturesEnabled) {
+            KyantGlassSurface(
+                backdrop = backdrop,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 148.dp)
+                    .widthIn(max = 340.dp),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Row(
+                    Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Swipe left or right across the video to seek",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { showSwipeSeekHint = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss seeking tip", tint = Color.White)
+                    }
+                }
             }
         }
 
