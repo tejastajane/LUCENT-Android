@@ -1,28 +1,33 @@
 # LUCENT design contract
 
-The agreed visual direction is Apple-inspired neutral Liquid Glass, not generic blue glassmorphism.
+LUCENT uses an Apple-inspired, neutral Liquid Glass visual language. The intended material is real backdrop-sampled glass, not generic blue glassmorphism.
 
-## Non-negotiable palette
+## Palette and theme
 
-- Canvas: pure black AMOLED (`#000000`).
-- Glass fill: extremely subtle neutral charcoal/white translucency.
-- Edge/highlight: fine neutral white/grey specular highlights.
-- Icons and controls: white, with inactive controls in neutral grey.
-- No blue tint, blue borders, blue glow, coloured glass fill, or blue selection state.
-- No labels in the bottom navigation. The four tabs are Videos, Folder, Browse, and More.
+- Dark canvas: pure black AMOLED (`#000000`).
+- Glass fill: translucent neutral charcoal in dark theme and translucent white in light theme.
+- Edges and highlights: restrained white/grey specular highlights.
+- Dark-theme controls: white with inactive controls in neutral grey.
+- Light-theme controls: neutral dark foregrounds; the selected bottom-navigation icon uses the app's blue accent.
+- Do not add blue tint, blue borders, or blue glow to the glass material.
 
 ## Liquid Glass implementation
 
-Use the real backdrop capture and effects API from the user's fork, https://github.com/tejastajane/AndroidLiquidGlass, published as `io.github.kyant0:backdrop`. Surfaces use backdrop sampling, blur, and restrained lens refraction. Chromatic aberration should remain disabled for UI glass. Controls must sample the actual content behind them, especially the video frame in playback. If the neutral effect is not visible on a pure black area, do not compensate with a blue hue; use a slightly stronger neutral surface/highlight instead.
+Use the Backdrop and Shapes APIs from Kyant0's AndroidLiquidGlass library, published as `io.github.kyant0:backdrop` and `io.github.kyant0:shapes`.
 
-## Screens
+Glass surfaces sample the content behind them and use blur, lens refraction, highlights, and shadows. Chromatic aberration should remain disabled for UI glass. Player controls and panels should sample the actual video frame wherever their layout provides a meaningful backdrop.
 
-1. Videos: searchable media list with thumbnail, duration, size and local path.
-2. Folder: media grouped by directory.
-3. Browse: storage overview, SAF directory tree and direct file picking.
-4. More: media scan, playback hardware acceleration, gestures and feature sections.
-5. Landscape player: filename, floating transport controls, seeking, audio/subtitle track selectors, external subtitle picker, aspect ratio, brightness, volume, playback speed, and tools panel.
+Dialogs and expanding player panels share the same theme-aware Kyant0 material component. The video control buttons retain their separate, original GlassSurface treatment.
+
+## Screens and navigation
+
+1. **Videos:** searchable media library with All, Latest, Movies, TV Shows, and Anime filters.
+2. **Folders:** media grouped by storage directory.
+3. **Settings:** theme, hardware acceleration, playback gestures, media scan, direct media-management access, and app information.
+4. **Player:** portrait and landscape layouts with transport controls, seek bar, audio/subtitle track selectors, external subtitle picker, aspect ratio, brightness, volume, playback speed, bookmarks, favourites, sharing, and information.
+
+The player supports a duration/remaining-time toggle and cumulative feedback for repeated double-tap seeking.
 
 ## Validation
 
-Do not call this a working release until Android CI succeeds and playback is tested with local files on a physical device or emulator.
+Keep the GitHub Actions workflow focused on building and uploading the production APK. Validate playback and visual changes on a physical Android device before merging user-facing experiments into `main`.

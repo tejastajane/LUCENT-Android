@@ -4,7 +4,6 @@ import android.content.ContentUris
 import android.content.ContentResolver
 import android.os.Build
 import android.provider.MediaStore
-import java.util.Locale
 
 class VideoRepository(private val resolver: ContentResolver) {
     fun loadVideos(): List<VideoItem> {

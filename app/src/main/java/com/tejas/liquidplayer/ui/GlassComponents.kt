@@ -145,7 +145,7 @@ fun GlassSurface(
  * Callers provide their own shape so existing panel geometry stays unchanged.
  */
 @Composable
-fun KyantDialogMaterialSurface(
+fun KyantGlassSurface(
     backdrop: Backdrop,
     modifier: Modifier = Modifier,
     shape: Shape,
@@ -183,7 +183,6 @@ fun GlassIconButton(
     icon: ImageVector,
     contentDescription: String,
     modifier: Modifier = Modifier,
-    selected: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
