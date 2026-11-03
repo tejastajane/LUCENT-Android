@@ -345,6 +345,7 @@ fun VideoPlayerScreen(
             playerPreferences.edit().putLong(progressKey, storedPosition).remove(legacyProgressKey).apply()
         }
     }
+    val latestPersistProgress = rememberUpdatedState(persistProgress)
 
     fun findSavedTrack(
         tracks: List<TrackOption>,
@@ -407,7 +408,7 @@ fun VideoPlayerScreen(
                 runCatching { controller.player.isPlaying }.getOrDefault(false)
             ) {
                 controller.player.pause()
-                persistProgress()
+                latestPersistProgress.value()
                 isPlaying = false
                 audioFocus.abandon()
             }
