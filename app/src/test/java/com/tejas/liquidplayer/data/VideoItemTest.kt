@@ -32,4 +32,26 @@ class VideoItemTest {
         assertTrue(compareNaturalNames("episode 2.mkv", "Episode 10.mkv") < 0)
         assertEquals(0, compareNaturalNames("Episode 2.mkv", "Episode 2.mkv"))
     }
+
+    @Test
+    fun legacyRelativePathUsesParentDirectoryAndRemovesPrimaryStoragePrefix() {
+        assertEquals(
+            "Movies/Anime/Season 1/",
+            legacyRelativePath(
+                "/storage/emulated/0/Movies/Anime/Season 1/video.mkv",
+                "/storage/emulated/0"
+            )
+        )
+    }
+
+    @Test
+    fun legacyRelativePathKeepsSecondaryVolumeDistinct() {
+        assertEquals(
+            "storage/1234-5678/DCIM/Camera/",
+            legacyRelativePath(
+                "/storage/1234-5678/DCIM/Camera/video.mp4",
+                "/storage/emulated/0"
+            )
+        )
+    }
 }
