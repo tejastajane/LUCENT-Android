@@ -2,8 +2,7 @@ package com.tejas.liquidplayer.ui
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.combinedClickable
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -19,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -189,14 +189,20 @@ fun GlassIconButton(
     val view = LocalView.current
     val base = modifier.size(width = 68.dp, height = 48.dp).clip(RoundedCornerShape(50.dp))
     val inputModifier = if (onLongClick != null) {
-        base.pointerInput(onClick, onLongClick) {
-            detectTapGestures(
-                onTap = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
-                onLongPress = { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); onLongClick() }
-            )
-        }
+        base.combinedClickable(
+            interactionSource = null,
+            indication = null,
+            role = Role.Button,
+            onClickLabel = contentDescription,
+            onLongClickLabel = "Open aspect ratio options",
+            onClick = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
+            onLongClick = { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); onLongClick() }
+        )
     } else {
-        base.clickable { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() }
+        base.clickable(role = Role.Button) {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onClick()
+        }
     }
     GlassSurface(
         backdrop = backdrop,
