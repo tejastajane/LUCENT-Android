@@ -401,6 +401,14 @@ private fun VideosScreen(
         ) {
             Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         }
+        if (hasScanError && videos.isNotEmpty()) {
+            Text(
+                "Couldn't refresh the library. Showing the last available list.",
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         if (selectedFolder != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
