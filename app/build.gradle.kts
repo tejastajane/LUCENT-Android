@@ -66,6 +66,7 @@ dependencies {
 
     // The actual Liquid Glass effect library requested for this project.
     implementation("io.github.kyant0:backdrop:2.0.1")
+    implementation("io.github.kyant0:shapes:1.2.1")
 
     // VLC's playback engine, independent from this app's custom UI.
     implementation("org.videolan.android:libvlc-all:3.7.7")

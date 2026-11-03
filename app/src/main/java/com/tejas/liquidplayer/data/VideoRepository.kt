@@ -50,7 +50,7 @@ class VideoRepository(private val resolver: ContentResolver) {
                 )
             }
         }
-        return results
+        return sortVideosAscending(results)
     }
 
 
