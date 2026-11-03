@@ -436,7 +436,11 @@ private fun VideosScreen(
             "Latest" -> true
             else -> true
         }
-        matchesCategory && (selectedFolder == null || item.folderPath == selectedFolder)
+        matchesCategory && (
+            selectedFolder == null ||
+                item.folderIdentity == selectedFolder ||
+                item.folderPath == selectedFolder // compatibility with a previously restored selection
+            )
     }.let { items ->
         if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
     }
@@ -458,8 +462,9 @@ private fun VideosScreen(
         }
         if (selectedFolder != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                val selectedFolderPath = selectedFolder.substringAfter('|', selectedFolder)
                 Text(
-                    "Folder: ${selectedFolder.replace("/", " › ").ifBlank { "Internal storage" }}",
+                    "Folder: ${selectedFolderPath.replace("/", " › ").ifBlank { "Internal storage" }}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
@@ -545,7 +550,7 @@ private fun FoldersScreen(
         if (!hasPermission) {
             EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected(null) })
         } else {
-            val folders = videos.groupBy { it.folderPath }
+            val folders = videos.groupBy { it.folderIdentity }
                 .toList()
                 .sortedBy { it.first.lowercase(Locale.ROOT) }
             if (folders.isEmpty()) {
@@ -562,10 +567,13 @@ private fun FoldersScreen(
                     contentPadding = PaddingValues(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 176.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(folders, key = { it.first }) { (path, folderVideos) ->
+                    items(folders, key = { it.first }) { (identity, folderVideos) ->
+                        val path = identity.substringAfter('|')
                         val name = path.substringAfterLast('/').ifBlank { "Internal storage" }
                         val breadcrumb = path.replace("/", " › ").ifBlank { "Internal storage" }
-                        Column(Modifier.fillMaxWidth().clickable { onFolderSelected(path) }) {
+                        Column(
+                            Modifier.fillMaxWidth().clickable { onFolderSelected(identity) }
+                        ) {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
