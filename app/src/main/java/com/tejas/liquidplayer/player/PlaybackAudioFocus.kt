@@ -28,6 +28,7 @@ internal class PlaybackAudioFocus(
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private var noisyReceiverRegistered = false
+    private var requestActive = false
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -39,16 +40,18 @@ internal class PlaybackAudioFocus(
     }
 
     private val listener = AudioManager.OnAudioFocusChangeListener { change ->
-        when (change) {
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                abandon()
-                onFocusLost()
-            }
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                // Record focus restoration but deliberately do not resume playback.
-                hasFocus = true
+        if (requestActive) {
+            when (change) {
+                AudioManager.AUDIOFOCUS_LOSS,
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    abandon()
+                    onFocusLost()
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    // Record focus restoration but deliberately do not resume playback.
+                    hasFocus = true
+                }
             }
         }
     }
@@ -85,6 +88,7 @@ internal class PlaybackAudioFocus(
             )
         }
         hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        requestActive = hasFocus
         if (hasFocus) {
             registerNoisyReceiver()
         } else {
@@ -94,13 +98,14 @@ internal class PlaybackAudioFocus(
     }
 
     fun abandon() {
+        requestActive = false
+        hasFocus = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         } else {
             @Suppress("DEPRECATION")
             audioManager.abandonAudioFocus(listener)
         }
-        hasFocus = false
         unregisterNoisyReceiver()
     }
 
