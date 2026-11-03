@@ -39,35 +39,47 @@ fun LiquidPlayerApp(
 ) {
     val context = LocalContext.current
     val repository = remember(context) { VideoRepository(context.contentResolver) }
-    val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
+    val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
+    val settingsPreferences = remember(context, playerPreferences) {
+        context.getSharedPreferences("lucent_settings", 0).also { settings ->
+            listOf("dark_theme", "hardware_acceleration", "gestures_enabled").forEach { key ->
+                if (!settings.contains(key) && playerPreferences.contains(key)) {
+                    settings.edit()
+                        .putBoolean(key, playerPreferences.getBoolean(key, true))
+                        .apply()
+                }
+            }
+        }
+    }
 
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var mediaRefreshToken by remember { mutableIntStateOf(0) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var hasMediaScanError by remember { mutableStateOf(false) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var hasMediaManagementAccess by remember { mutableStateOf(canManageMedia(context)) }
-    var showMediaManagementPrompt by remember { mutableStateOf(false) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var pendingLegacyMutation by remember { mutableStateOf<PendingMediaMutation?>(null) }
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var lastPlayedVideo by remember(preferences) {
-        mutableStateOf(preferences.getString("last_played_uri", null)?.let { savedUri ->
+    var lastPlayedVideo by remember(playerPreferences) {
+        mutableStateOf(playerPreferences.getString("last_played_uri", null)?.let { savedUri ->
             VideoItem(
                 id = savedUri.hashCode().toLong(),
                 uri = Uri.parse(savedUri),
-                name = preferences.getString("last_played_name", "Last played video") ?: "Last played video",
-                relativePath = preferences.getString("last_played_path", "Recent/") ?: "Recent/",
-                durationMs = preferences.getLong("last_played_duration", 0L),
-                sizeBytes = preferences.getLong("last_played_size", 0L),
-                dateAddedSeconds = preferences.getLong("last_played_date", 0L),
-                mimeType = preferences.getString("last_played_mime", null)
+                name = playerPreferences.getString("last_played_name", "Last played video") ?: "Last played video",
+                relativePath = playerPreferences.getString("last_played_path", "Recent/") ?: "Recent/",
+                durationMs = playerPreferences.getLong("last_played_duration", 0L),
+                sizeBytes = playerPreferences.getLong("last_played_size", 0L),
+                dateAddedSeconds = playerPreferences.getLong("last_played_date", 0L),
+                mimeType = playerPreferences.getString("last_played_mime", null)
             )
         })
     }
     var hardwareAcceleration by remember {
-        mutableStateOf(preferences.getBoolean("hardware_acceleration", true))
+        mutableStateOf(settingsPreferences.getBoolean("hardware_acceleration", true))
     }
     var gesturesEnabled by remember {
-        mutableStateOf(preferences.getBoolean("gestures_enabled", true))
+        mutableStateOf(settingsPreferences.getBoolean("gestures_enabled", true))
     }
     var pendingMediaMutation by remember { mutableStateOf<PendingMediaMutation?>(null) }
 
@@ -99,6 +111,33 @@ fun LiquidPlayerApp(
         }
     }
 
+    val legacyWritePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val mutation = pendingLegacyMutation
+        pendingLegacyMutation = null
+        if (granted && mutation != null) {
+            when (val outcome = executeMediaMutation(context, mutation)) {
+                is MediaMutationOutcome.Success -> {
+                    Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
+                    mediaRefreshToken++
+                }
+                is MediaMutationOutcome.NeedsApproval -> {
+                    Toast.makeText(context, "Android did not approve the media change.", Toast.LENGTH_SHORT).show()
+                }
+                is MediaMutationOutcome.Failure -> {
+                    Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        } else if (mutation != null) {
+            Toast.makeText(
+                context,
+                "Storage write access is required to rename or delete media on Android 9 and earlier.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     val mediaManagementSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
@@ -112,13 +151,7 @@ fun LiquidPlayerApp(
         }
     }
 
-    fun dismissMediaManagementPrompt() {
-        preferences.edit().putBoolean("media_management_prompted", true).apply()
-        showMediaManagementPrompt = false
-    }
-
     fun requestMediaManagementAccess() {
-        dismissMediaManagementPrompt()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
                 data = Uri.parse("package:${context.packageName}")
@@ -132,6 +165,16 @@ fun LiquidPlayerApp(
     }
 
     fun startMediaMutation(mutation: PendingMediaMutation) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingLegacyMutation = mutation
+            legacyWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val request = when (mutation) {
                 is PendingMediaMutation.Rename -> MediaStore.createWriteRequest(
@@ -169,7 +212,7 @@ fun LiquidPlayerApp(
     fun openVideo(item: VideoItem) {
         lastPlayedVideo = item
         selectedVideo = item
-        preferences.edit()
+        playerPreferences.edit()
             .putString("last_played_uri", item.uri.toString())
             .putString("last_played_name", item.name)
             .putString("last_played_path", item.relativePath)
@@ -184,6 +227,20 @@ fun LiquidPlayerApp(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         hasVideoPermission = hasMediaPermission(context)
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, context) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasVideoPermission = hasMediaPermission(context)
+                hasMediaManagementAccess = canManageMedia(context)
+                // Android 14+ selected-media grants can change in Settings while this app is backgrounded.
+                mediaRefreshToken++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val documentPicker = rememberLauncherForActivityResult(
@@ -215,25 +272,27 @@ fun LiquidPlayerApp(
     LaunchedEffect(hasVideoPermission, mediaRefreshToken) {
         if (mediaRefreshToken > 0) isRefreshing = true
         try {
-            videos = if (hasVideoPermission) {
-                withContext(Dispatchers.IO) {
-                    runCatching { repository.loadVideos() }.getOrDefault(emptyList())
-                }
+            if (!hasVideoPermission) {
+                videos = emptyList()
+                hasMediaScanError = false
             } else {
-                emptyList()
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { repository.loadVideos() }
+                }
+                result.fold(
+                    onSuccess = {
+                        videos = it
+                        hasMediaScanError = false
+                    },
+                    onFailure = {
+                        hasMediaScanError = true
+                        Toast.makeText(context, "Couldn't scan the video library. Try scanning again.", Toast.LENGTH_LONG).show()
+                    }
+                )
             }
         } finally {
             if (mediaRefreshToken > 0) isRefreshing = false
         }
-    }
-
-    LaunchedEffect(hasVideoPermission, hasMediaManagementAccess) {
-        val alreadyPrompted = preferences.getBoolean("media_management_prompted", false)
-        showMediaManagementPrompt =
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            hasVideoPermission &&
-            !hasMediaManagementAccess &&
-            !alreadyPrompted
     }
 
     // Keep libVLC's native TextureView outside AnimatedContent's graphics-layer
@@ -261,7 +320,7 @@ fun LiquidPlayerApp(
         // Resume only when the previous item has a meaningful, unfinished position.
         // Otherwise the pill must play the newest available library video.
         val resumableVideo = lastPlayedVideo?.takeIf { item ->
-            val savedPosition = preferences.getLong(
+            val savedPosition = playerPreferences.getLong(
                 "playback_position_${item.uri.toString().hashCode()}",
                 0L
             )
@@ -277,8 +336,11 @@ fun LiquidPlayerApp(
             hasVideoPermission = hasVideoPermission,
             hasMediaManagementAccess = hasMediaManagementAccess,
             isRefreshing = isRefreshing,
-            showMediaManagementPrompt = showMediaManagementPrompt,
-            onDismissMediaManagementPrompt = ::dismissMediaManagementPrompt,
+            hasMediaScanError = hasMediaScanError,
+            favouriteUris = videos.asSequence()
+                .filter { playerPreferences.getBoolean("favourite_${it.uri.toString().hashCode()}", false) }
+                .map { it.uri.toString() }
+                .toSet(),
             onRequestMediaPermission = {
                 val permissions = when {
                     Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -304,12 +366,12 @@ fun LiquidPlayerApp(
             hardwareAcceleration = hardwareAcceleration,
             onHardwareAccelerationChanged = {
                 hardwareAcceleration = it
-                preferences.edit().putBoolean("hardware_acceleration", it).apply()
+                settingsPreferences.edit().putBoolean("hardware_acceleration", it).apply()
             },
             gesturesEnabled = gesturesEnabled,
             onGesturesEnabledChanged = {
                 gesturesEnabled = it
-                preferences.edit().putBoolean("gestures_enabled", it).apply()
+                settingsPreferences.edit().putBoolean("gestures_enabled", it).apply()
             },
             isDarkTheme = isDarkTheme,
             onThemeChanged = onThemeChanged,
