@@ -163,6 +163,7 @@ import com.tejas.liquidplayer.ui.liquid.utils.DampedDragAnimation
 import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
+import com.tejas.liquidplayer.data.mediaPreferenceId
 import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.KyantGlassSurface
 import com.tejas.liquidplayer.ui.GlassSurface
@@ -198,46 +199,58 @@ fun VideoPlayerScreen(
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val lastBrightnessKey = "last_player_brightness"
-    val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
-    val favouriteKey = remember(video.uri) { "favourite_${video.uri.toString().hashCode()}" }
-    val preferenceSuffix = remember(video.uri) { video.uri.toString().hashCode().toString() }
+    val preferenceSuffix = remember(video.uri) { mediaPreferenceId(video.uri.toString()) }
+    val legacyPreferenceSuffix = remember(video.uri) { video.uri.toString().hashCode().toString() }
+    val progressKey = remember(preferenceSuffix) { "playback_position_$preferenceSuffix" }
+    val legacyProgressKey = remember(legacyPreferenceSuffix) { "playback_position_$legacyPreferenceSuffix" }
+    val favouriteKey = remember(preferenceSuffix) { "favourite_$preferenceSuffix" }
+    val legacyFavouriteKey = remember(legacyPreferenceSuffix) { "favourite_$legacyPreferenceSuffix" }
     val audioTrackIdKey = remember(preferenceSuffix) { "audio_track_id_$preferenceSuffix" }
+    val legacyAudioTrackIdKey = remember(legacyPreferenceSuffix) { "audio_track_id_$legacyPreferenceSuffix" }
     val audioTrackLabelKey = remember(preferenceSuffix) { "audio_track_label_$preferenceSuffix" }
+    val legacyAudioTrackLabelKey = remember(legacyPreferenceSuffix) { "audio_track_label_$legacyPreferenceSuffix" }
     val subtitleTrackIdKey = remember(preferenceSuffix) { "subtitle_track_id_$preferenceSuffix" }
+    val legacySubtitleTrackIdKey = remember(legacyPreferenceSuffix) { "subtitle_track_id_$legacyPreferenceSuffix" }
     val subtitleTrackLabelKey = remember(preferenceSuffix) { "subtitle_track_label_$preferenceSuffix" }
+    val legacySubtitleTrackLabelKey = remember(legacyPreferenceSuffix) { "subtitle_track_label_$legacyPreferenceSuffix" }
     val externalSubtitleUriKey = remember(preferenceSuffix) { "external_subtitle_uri_$preferenceSuffix" }
+    val legacyExternalSubtitleUriKey = remember(legacyPreferenceSuffix) { "external_subtitle_uri_$legacyPreferenceSuffix" }
     val subtitleDelayKey = remember(preferenceSuffix) { "subtitle_delay_us_$preferenceSuffix" }
+    val legacySubtitleDelayKey = remember(legacyPreferenceSuffix) { "subtitle_delay_us_$legacyPreferenceSuffix" }
     val savedAudioTrackId = remember(video.uri, playerPreferences) {
-        playerPreferences.getInt(audioTrackIdKey, Int.MIN_VALUE)
+        playerPreferences.getInt(audioTrackIdKey, playerPreferences.getInt(legacyAudioTrackIdKey, Int.MIN_VALUE))
     }
     val savedAudioTrackLabel = remember(video.uri, playerPreferences) {
-        playerPreferences.getString(audioTrackLabelKey, null)
+        playerPreferences.getString(audioTrackLabelKey, playerPreferences.getString(legacyAudioTrackLabelKey, null))
     }
     val savedSubtitleTrackId = remember(video.uri, playerPreferences) {
-        playerPreferences.getInt(subtitleTrackIdKey, Int.MIN_VALUE)
+        playerPreferences.getInt(subtitleTrackIdKey, playerPreferences.getInt(legacySubtitleTrackIdKey, Int.MIN_VALUE))
     }
     val savedSubtitleTrackLabel = remember(video.uri, playerPreferences) {
-        playerPreferences.getString(subtitleTrackLabelKey, null)
+        playerPreferences.getString(subtitleTrackLabelKey, playerPreferences.getString(legacySubtitleTrackLabelKey, null))
     }
     val savedExternalSubtitleUri = remember(video.uri, playerPreferences) {
-        playerPreferences.getString(externalSubtitleUriKey, null)
+        playerPreferences.getString(externalSubtitleUriKey, playerPreferences.getString(legacyExternalSubtitleUriKey, null))
     }
     val savedSubtitleDelayUs = remember(video.uri, playerPreferences) {
-        playerPreferences.getLong(subtitleDelayKey, 0L)
+        playerPreferences.getLong(subtitleDelayKey, playerPreferences.getLong(legacySubtitleDelayKey, 0L))
     }
     var isFavourite by remember(video.uri, playerPreferences) {
-        mutableStateOf(playerPreferences.getBoolean(favouriteKey, false))
+        mutableStateOf(playerPreferences.getBoolean(favouriteKey, playerPreferences.getBoolean(legacyFavouriteKey, false)))
     }
-    val bookmarksKey = remember(video.uri) { "bookmarks_${video.uri.toString().hashCode()}" }
+    val bookmarksKey = remember(preferenceSuffix) { "bookmarks_$preferenceSuffix" }
+    val legacyBookmarksKey = remember(legacyPreferenceSuffix) { "bookmarks_$legacyPreferenceSuffix" }
     var bookmarksMs by remember(video.uri, playerPreferences) {
         mutableStateOf(
-            playerPreferences.getStringSet(bookmarksKey, emptySet())
+            playerPreferences.getStringSet(bookmarksKey, playerPreferences.getStringSet(legacyBookmarksKey, emptySet()))
                 ?.mapNotNull { it.toLongOrNull() }
                 ?.toSet()
                 ?: emptySet()
         )
     }
-    val savedPositionMs = remember(video.uri, playerPreferences) { playerPreferences.getLong(progressKey, 0L) }
+    val savedPositionMs = remember(video.uri, playerPreferences) {
+        playerPreferences.getLong(progressKey, playerPreferences.getLong(legacyProgressKey, 0L))
+    }
     val backdrop = rememberLayerBackdrop()
     val retryScope = rememberCoroutineScope()
     val cacheRetryAttempted = remember(controller, video.uri) { AtomicBoolean(false) }
@@ -298,7 +311,7 @@ fun VideoPlayerScreen(
             val current = runCatching { controller.player.time }.getOrDefault(positionMs).coerceAtLeast(0L)
             val length = runCatching { controller.player.length }.getOrDefault(durationMs)
             val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
-            playerPreferences.edit().putLong(progressKey, storedPosition).apply()
+            playerPreferences.edit().putLong(progressKey, storedPosition).remove(legacyProgressKey).apply()
         }
     }
 
@@ -318,6 +331,7 @@ fun VideoPlayerScreen(
         bookmarksMs = updated.toSortedSet()
         playerPreferences.edit()
             .putStringSet(bookmarksKey, bookmarksMs.map { it.toString() }.toSet())
+            .remove(legacyBookmarksKey)
             .apply()
     }
 
@@ -411,8 +425,11 @@ fun VideoPlayerScreen(
             if (added) {
                 playerPreferences.edit()
                     .putString(externalSubtitleUriKey, uri.toString())
+                    .remove(legacyExternalSubtitleUriKey)
                     .remove(subtitleTrackIdKey)
+                    .remove(legacySubtitleTrackIdKey)
                     .remove(subtitleTrackLabelKey)
+                    .remove(legacySubtitleTrackLabelKey)
                     .apply()
                 selectedSubtitleTrackId = controller.currentSubtitleTrackId()
             }
@@ -560,7 +577,7 @@ fun VideoPlayerScreen(
             val now = SystemClock.elapsedRealtime()
             if (now - lastSavedAt >= 1_000L) {
                 val storedPosition = if (mediaLength > 0L && currentTime >= mediaLength - 2_500L) 0L else currentTime
-                playerPreferences.edit().putLong(progressKey, storedPosition).apply()
+                playerPreferences.edit().putLong(progressKey, storedPosition).remove(legacyProgressKey).apply()
                 lastSavedAt = now
             }
             delay(350L)
@@ -1133,7 +1150,10 @@ fun VideoPlayerScreen(
                                         val success = controller.selectAudioTrack(id)
                                         selectedAudioTrackId = controller.currentAudioTrackId()
                                         if (success || selectedAudioTrackId == id) {
-                                            val editor = playerPreferences.edit().putInt(audioTrackIdKey, id)
+                                            val editor = playerPreferences.edit()
+                                                .putInt(audioTrackIdKey, id)
+                                                .remove(legacyAudioTrackIdKey)
+                                                .remove(legacyAudioTrackLabelKey)
                                             audioTracks.firstOrNull { it.id == id }?.let {
                                                 editor.putString(audioTrackLabelKey, it.label)
                                             }
@@ -1164,7 +1184,10 @@ fun VideoPlayerScreen(
                                         if (success || selectedSubtitleTrackId == id) {
                                             val editor = playerPreferences.edit()
                                                 .putInt(subtitleTrackIdKey, id)
+                                                .remove(legacySubtitleTrackIdKey)
+                                                .remove(legacySubtitleTrackLabelKey)
                                                 .remove(externalSubtitleUriKey)
+                                                .remove(legacyExternalSubtitleUriKey)
                                             subtitleTracks.firstOrNull { it.id == id }?.let {
                                                 editor.putString(subtitleTrackLabelKey, it.label)
                                             }
@@ -1178,8 +1201,11 @@ fun VideoPlayerScreen(
                                         if (success || selectedSubtitleTrackId == -1) {
                                             playerPreferences.edit()
                                                 .putInt(subtitleTrackIdKey, -1)
+                                                .remove(legacySubtitleTrackIdKey)
                                                 .remove(subtitleTrackLabelKey)
+                                                .remove(legacySubtitleTrackLabelKey)
                                                 .remove(externalSubtitleUriKey)
+                                                .remove(legacyExternalSubtitleUriKey)
                                                 .apply()
                                         }
                                         trackSelectionMessage = if (success || selectedSubtitleTrackId == -1) "Subtitles disabled" else "VLC could not disable subtitles."
@@ -1193,7 +1219,7 @@ fun VideoPlayerScreen(
                                         val next = (subtitleDelayUs - 100_000L).coerceAtLeast(-10_000_000L)
                                         if (controller.setSubtitleDelayUs(next)) {
                                             subtitleDelayUs = next
-                                            playerPreferences.edit().putLong(subtitleDelayKey, next).apply()
+                                            playerPreferences.edit().putLong(subtitleDelayKey, next).remove(legacySubtitleDelayKey).apply()
                                         }
                                     }) { Text("−0.1 s", color = Color.White) }
                                     Text(String.format(java.util.Locale.US, "%+.1f s", subtitleDelayUs / 1_000_000.0), modifier = Modifier.weight(1f), color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -1201,7 +1227,7 @@ fun VideoPlayerScreen(
                                         val next = (subtitleDelayUs + 100_000L).coerceAtMost(10_000_000L)
                                         if (controller.setSubtitleDelayUs(next)) {
                                             subtitleDelayUs = next
-                                            playerPreferences.edit().putLong(subtitleDelayKey, next).apply()
+                                            playerPreferences.edit().putLong(subtitleDelayKey, next).remove(legacySubtitleDelayKey).apply()
                                         }
                                     }) { Text("+0.1 s", color = Color.White) }
                                 }
@@ -1212,7 +1238,7 @@ fun VideoPlayerScreen(
                                 onSpeed = { panel = PlayerPanel.Speed },
                                 onFavourite = {
                                     isFavourite = !isFavourite
-                                    playerPreferences.edit().putBoolean(favouriteKey, isFavourite).apply()
+                                    playerPreferences.edit().putBoolean(favouriteKey, isFavourite).remove(legacyFavouriteKey).apply()
                                 },
                                 onShare = {
                                     runCatching {
