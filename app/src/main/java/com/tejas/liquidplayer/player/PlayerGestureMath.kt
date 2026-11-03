@@ -43,3 +43,23 @@ internal fun horizontalSeekTargetMs(
 
     return (start + delta).coerceIn(0L, durationMs)
 }
+
+internal enum class PlayerDragAxis {
+    Horizontal,
+    Vertical
+}
+
+/**
+ * Resolve a drag only after touch slop has been crossed. A modest horizontal
+ * dominance margin keeps diagonal swipes from stealing brightness/volume gestures.
+ */
+internal fun resolvePlayerDragAxis(
+    dragDistanceX: Float,
+    dragDistanceY: Float,
+    horizontalDominanceRatio: Float = 1.15f
+): PlayerDragAxis =
+    if (abs(dragDistanceX) > abs(dragDistanceY) * horizontalDominanceRatio) {
+        PlayerDragAxis.Horizontal
+    } else {
+        PlayerDragAxis.Vertical
+    }
