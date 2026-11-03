@@ -247,7 +247,10 @@ fun MainLibraryUi(
                         )
                         3 -> SearchResultsScreen(
                             backdrop = backdrop, videos = videos, query = searchQuery,
-                            hasPermission = hasVideoPermission, onRequestPermission = onRequestMediaPermission,
+                            hasPermission = hasVideoPermission,
+                            hasScanError = hasMediaScanError,
+                            onRequestPermission = onRequestMediaPermission,
+                            onRescan = onRescan,
                             onPlay = onPlay,
                             onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) }
                         )
@@ -337,7 +340,9 @@ private fun SearchResultsScreen(
     videos: List<VideoItem>,
     query: String,
     hasPermission: Boolean,
+    hasScanError: Boolean,
     onRequestPermission: () -> Unit,
+    onRescan: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onRequestActions: (VideoItem) -> Unit
 ) {
@@ -347,8 +352,14 @@ private fun SearchResultsScreen(
         if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
         else if (filtered.isEmpty()) EmptyState(
             backdrop,
-            "No matches",
-            "Try another title or folder name, or clear the search field above."
+            if (hasScanError) "Library scan failed" else "No matches",
+            if (hasScanError) {
+                "LUCENT couldn't refresh the video library. Scan again to retry."
+            } else {
+                "Try another title or folder name, or clear the search field above."
+            },
+            action = if (hasScanError) "Scan again" else null,
+            onAction = if (hasScanError) onRescan else null
         )
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRequestActions = onRequestActions) }
