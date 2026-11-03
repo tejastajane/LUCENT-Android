@@ -279,27 +279,28 @@ fun VideoPlayerScreen(
     var cacheRetryJob by remember(video.uri) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
     var durationMs by remember(video.uri) { mutableLongStateOf(video.durationMs) }
-    val audioFocus = remember(context, controller, video.uri) {
-        PlaybackAudioFocus(context) {
-            controller.player.pause()
-            val current = runCatching { controller.player.time }
-                .getOrDefault(positionMs)
-                .coerceAtLeast(0L)
-            val length = runCatching { controller.player.length }
-                .getOrDefault(durationMs)
-            val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
-            positionMs = storedPosition
-            playerPreferences.edit()
-                .putLong(progressKey, storedPosition)
-                .remove(legacyProgressKey)
-                .apply()
-            isPlaying = false
-            Toast.makeText(
-                context,
-                "Playback paused because another app, an audio-route change, or a phone call needs audio.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+    val latestAudioFocusLoss = rememberUpdatedState {
+        controller.player.pause()
+        val current = runCatching { controller.player.time }
+            .getOrDefault(positionMs)
+            .coerceAtLeast(0L)
+        val length = runCatching { controller.player.length }
+            .getOrDefault(durationMs)
+        val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
+        positionMs = storedPosition
+        playerPreferences.edit()
+            .putLong(progressKey, storedPosition)
+            .remove(legacyProgressKey)
+            .apply()
+        isPlaying = false
+        Toast.makeText(
+            context,
+            "Playback paused because another app, an audio-route change, or a phone call needs audio.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+    val audioFocus = remember(context, controller) {
+        PlaybackAudioFocus(context) { latestAudioFocusLoss.value() }
     }
     var showRemainingTime by remember(video.uri) { mutableStateOf(false) }
     var audioTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
