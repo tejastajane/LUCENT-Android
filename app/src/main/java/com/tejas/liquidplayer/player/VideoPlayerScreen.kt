@@ -202,18 +202,6 @@ fun VideoPlayerScreen(
         audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
     }
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
-    val audioFocus = remember(context, controller) {
-        PlaybackAudioFocus(context) {
-            if (runCatching { controller.player.isPlaying }.getOrDefault(false)) {
-                controller.player.pause()
-                Toast.makeText(
-                    context,
-                    "Playback paused because another app or a phone call needs audio.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val lastBrightnessKey = "last_player_brightness"
     val preferenceSuffix = remember(video.uri) { mediaPreferenceId(video.uri.toString()) }
@@ -291,6 +279,28 @@ fun VideoPlayerScreen(
     var cacheRetryJob by remember(video.uri) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
     var durationMs by remember(video.uri) { mutableLongStateOf(video.durationMs) }
+    val audioFocus = remember(context, controller) {
+        PlaybackAudioFocus(context) {
+            controller.player.pause()
+            val current = runCatching { controller.player.time }
+                .getOrDefault(positionMs)
+                .coerceAtLeast(0L)
+            val length = runCatching { controller.player.length }
+                .getOrDefault(durationMs)
+            val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
+            positionMs = storedPosition
+            playerPreferences.edit()
+                .putLong(progressKey, storedPosition)
+                .remove(legacyProgressKey)
+                .apply()
+            isPlaying = false
+            Toast.makeText(
+                context,
+                "Playback paused because another app, an audio-route change, or a phone call needs audio.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
     var showRemainingTime by remember(video.uri) { mutableStateOf(false) }
     var audioTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
     var subtitleTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
@@ -359,6 +369,8 @@ fun VideoPlayerScreen(
         val playingNow = runCatching { controller.player.isPlaying }.getOrDefault(false)
         if (playingNow) {
             controller.player.pause()
+            persistProgress()
+            isPlaying = false
             audioFocus.abandon()
         } else if (audioFocus.request()) {
             controller.player.play()
@@ -394,6 +406,8 @@ fun VideoPlayerScreen(
                 runCatching { controller.player.isPlaying }.getOrDefault(false)
             ) {
                 controller.player.pause()
+                persistProgress()
+                isPlaying = false
                 audioFocus.abandon()
             }
         }
