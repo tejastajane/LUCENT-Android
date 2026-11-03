@@ -55,14 +55,15 @@ class PlayerGestureAxisTest {
     }
 
     @Test
-    fun ambiguousDiagonalMovementDefaultsToVertical() {
-        assertEquals(
-            PlayerDragAxis.Vertical,
-            resolvePlayerDragAxis(40f, 40f)
-        )
-        assertEquals(
-            PlayerDragAxis.Vertical,
-            resolvePlayerDragAxis(46f, 40f)
-        )
+    fun ambiguousDiagonalMovementStaysUndecided() {
+        assertEquals(null, resolvePlayerDragAxis(40f, 40f))
+        assertEquals(null, resolvePlayerDragAxis(46f, 40f))
+        assertEquals(null, resolvePlayerDragAxis(40f, 46f))
+    }
+
+    @Test
+    fun clearDominanceResolvesAfterAnAmbiguousStart() {
+        assertEquals(PlayerDragAxis.Horizontal, resolvePlayerDragAxis(70f, 40f))
+        assertEquals(PlayerDragAxis.Vertical, resolvePlayerDragAxis(40f, 70f))
     }
 }
