@@ -327,7 +327,28 @@ fun MainLibraryUi(
                         .onFailure { Toast.makeText(context, "Unable to share this video.", Toast.LENGTH_SHORT).show() }
                     activeOverlay = null
                 },
-                onDelete = { activeOverlay = null; onDeleteVideo(overlay.item) }
+                onDelete = {
+                    val item = overlay.item
+                    val systemApprovalMessage = when {
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !hasMediaManagementAccess ->
+                            "Android will show its own approval dialog next. The video is not deleted unless you approve that system dialog."
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && hasMediaManagementAccess ->
+                            "Direct media deletion is enabled in LUCENT, so Android may not need to show another approval dialog."
+                        else ->
+                            "Android may show a separate system permission or approval dialog, depending on your device and storage permissions."
+                    }
+                    activeOverlay = LibraryOverlayState.Message(
+                        title = "Delete video?",
+                        message = "\"${item.name}\" will be permanently deleted from this device. This action cannot be undone.\n\n$systemApprovalMessage",
+                        confirmLabel = "Continue",
+                        cancelLabel = "Cancel",
+                        onConfirm = {
+                            activeOverlay = null
+                            onDeleteVideo(item)
+                        },
+                        onCancel = { activeOverlay = null }
+                    )
+                }
             )
             null -> Unit
         }
