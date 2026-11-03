@@ -933,32 +933,37 @@ fun VideoPlayerScreen(
                             onDrag = { change, dragAmount ->
                                 accumulatedDragDistance += dragAmount
                                 if (dragAxis == 0) {
-                                    dragAxis = if (
+                                    when (
                                         resolvePlayerDragAxis(
                                             accumulatedDragDistance.x,
                                             accumulatedDragDistance.y
-                                        ) == PlayerDragAxis.Horizontal
-                                    ) 1 else 2
-                                    if (dragAxis == 1) {
-                                        seekStartMs = runCatching { controller.player.time }
-                                            .getOrDefault(positionMs)
-                                            .coerceIn(0L, durationMs.coerceAtLeast(0L))
-                                        seekTargetMs = seekStartMs
-                                    } else {
-                                        verticalGestureZone = when {
-                                            dragStart.x < size.width * 0.40f -> -1
-                                            dragStart.x > size.width * 0.60f -> 1
-                                            else -> 0
+                                        )
+                                    ) {
+                                        PlayerDragAxis.Horizontal -> {
+                                            dragAxis = 1
+                                            seekStartMs = runCatching { controller.player.time }
+                                                .getOrDefault(positionMs)
+                                                .coerceIn(0L, durationMs.coerceAtLeast(0L))
+                                            seekTargetMs = seekStartMs
                                         }
-                                        adjustmentMode = verticalGestureZone
-                                        if (verticalGestureZone == 1) {
-                                            volumeAtDragStart = audioManager
-                                                .getStreamVolume(AudioManager.STREAM_MUSIC)
-                                                .coerceIn(0, systemVolumeMax)
-                                            lastAppliedVolume = volumeAtDragStart
-                                            accumulatedVolumeDelta = 0f
-                                            if (volume != volumeAtDragStart) volume = volumeAtDragStart
+                                        PlayerDragAxis.Vertical -> {
+                                            dragAxis = 2
+                                            verticalGestureZone = when {
+                                                dragStart.x < size.width * 0.40f -> -1
+                                                dragStart.x > size.width * 0.60f -> 1
+                                                else -> 0
+                                            }
+                                            adjustmentMode = verticalGestureZone
+                                            if (verticalGestureZone == 1) {
+                                                volumeAtDragStart = audioManager
+                                                    .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                                    .coerceIn(0, systemVolumeMax)
+                                                lastAppliedVolume = volumeAtDragStart
+                                                accumulatedVolumeDelta = 0f
+                                                if (volume != volumeAtDragStart) volume = volumeAtDragStart
+                                            }
                                         }
+                                        null -> Unit
                                     }
                                 }
 
