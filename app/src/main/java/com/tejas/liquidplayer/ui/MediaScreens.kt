@@ -88,6 +88,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -132,6 +133,7 @@ import java.util.Locale
 import java.text.DateFormat
 import java.util.Date
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainLibraryUi(
     selectedTab: Int,
@@ -139,6 +141,7 @@ fun MainLibraryUi(
     videos: List<VideoItem>,
     hasVideoPermission: Boolean,
     hasMediaManagementAccess: Boolean,
+    isRefreshing: Boolean,
     onRequestMediaPermission: () -> Unit,
     onRequestMediaManagementAccess: () -> Unit,
     onPlay: (VideoItem) -> Unit,
@@ -173,8 +176,13 @@ fun MainLibraryUi(
     }
     Box(Modifier.fillMaxSize().nestedScroll(scrollConnection).background(MaterialTheme.colorScheme.background)) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(MaterialTheme.colorScheme.background)) {
-            Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                AnimatedContent(
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRescan,
+                modifier = Modifier.fillMaxSize().statusBarsPadding()
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    AnimatedContent(
                     targetState = if (searchQuery.isNotBlank()) 3 else selectedTab.coerceIn(0, 2),
                     // Directional page transitions are preserved; the navbar remains a separate sibling layer.
                     transitionSpec = {
@@ -202,6 +210,7 @@ fun MainLibraryUi(
                             onManageMediaAccess = onRequestMediaManagementAccess
                         )
                     }
+                }
                 }
             }
         }
