@@ -552,7 +552,12 @@ private fun FoldersScreen(
         } else {
             val folders = videos.groupBy { it.folderIdentity }
                 .toList()
-                .sortedBy { it.first.lowercase(Locale.ROOT) }
+                .sortedWith(
+                    compareBy(
+                        { it.first.substringAfter('|').lowercase(Locale.ROOT) },
+                        { it.first.substringBefore('|').lowercase(Locale.ROOT) }
+                    )
+                )
             if (folders.isEmpty()) {
                 EmptyState(
                     backdrop,
