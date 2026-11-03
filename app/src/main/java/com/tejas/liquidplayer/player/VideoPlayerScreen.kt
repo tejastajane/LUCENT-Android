@@ -47,8 +47,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,7 +62,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -87,14 +84,11 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -138,7 +132,6 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.fastCoerceIn
-import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -158,7 +151,7 @@ import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.ui.GlassIconButton
-import com.tejas.liquidplayer.ui.KyantDialogMaterialSurface
+import com.tejas.liquidplayer.ui.KyantGlassSurface
 import com.tejas.liquidplayer.ui.GlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -973,7 +966,6 @@ fun VideoPlayerScreen(
                             if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             if (isPlaying) "Pause" else "Play",
                             modifier = Modifier.size(width = if (isLandscape) 80.dp else 58.dp, height = if (isLandscape) 52.dp else 48.dp),
-                            selected = true,
                             onClick = { controller.togglePlayPause() }
                         )
                         GlassIconButton(
@@ -1046,7 +1038,7 @@ fun VideoPlayerScreen(
                     else -> Alignment.TopCenter
                 }
             ) {
-                KyantDialogMaterialSurface(
+                KyantGlassSurface(
                     backdrop = backdrop,
                     modifier = Modifier.width(if (isLandscape) 340.dp else (screenWidth - 24.dp).coerceAtLeast(280.dp))
                         .padding(12.dp)

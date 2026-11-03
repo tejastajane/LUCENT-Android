@@ -4,15 +4,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tejastajane/LiquidPlayer-Android/releases/latest/download/lucent.apk"><strong>Download latest APK</strong></a>
+  <a href="https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk"><strong>Download latest APK</strong></a>
   ·
-  <a href="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml">Build workflow</a>
+  <a href="https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml">Build workflow</a>
   ·
-  <a href="https://github.com/tejastajane/LiquidPlayer-Android/issues">Report an issue</a>
+  <a href="https://github.com/tejastajane/LUCENT-Android/issues">Report an issue</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml"><img alt="LUCENT APK build" src="https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml"><img alt="LUCENT APK build" src="https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml/badge.svg?branch=main"></a>
   <img alt="Platform: Android" src="https://img.shields.io/badge/platform-Android-3DDC84">
   <img alt="Language: Kotlin" src="https://img.shields.io/badge/language-Kotlin-7F52FF">
   <img alt="UI: Jetpack Compose" src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4">
@@ -21,13 +21,13 @@
 
 LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combines libVLC playback with a custom, neutral Liquid Glass interface designed around translucent surfaces, backdrop blur, and lens refraction.
 
-> **Project status:** Active development. The APK linked above is an automatically built **debug/testing build**, not a Play Store release.
+> **Project status:** Active development. The downloadable APK is an automatically built debug/testing build, not a Play Store release.
 
 ## Download
 
-**[Download lucent.apk](https://github.com/tejastajane/LiquidPlayer-Android/releases/latest/download/lucent.apk)**
+**[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk)**
 
-The link always points to the APK attached to the latest successful main-branch build. GitHub Actions publishes a new release after the production APK is built successfully.
+The link points to the APK attached to the latest successful main-branch build. GitHub Actions publishes a new release after the production APK is built successfully.
 
 To install, download the APK on your Android device and open it. Android may ask you to allow installation from the browser or file manager you used.
 
@@ -35,12 +35,15 @@ To install, download the APK on your Android device and open it. Android may ask
 
 ### Media library
 - Scans the device's video library through Android MediaStore.
-- Browse videos in dedicated **Videos**, **Folder**, **Browse**, and **More** sections.
-- Filter the library by All, Movies, TV Shows, Anime, and Recent.
+- Three main sections: **Videos**, **Folders**, and **Settings**.
+- Filter videos by All, Latest, Movies, TV Shows, and Anime.
 - Search video names and folder paths.
-- Open individual videos through Android's system file picker.
+- Open individual videos through Android's system document picker.
 - Display video thumbnails, duration, file size, and storage location.
+- Sort episode and season filenames in natural numeric order.
+- Pull down on the library pages to rescan indexed media.
 - Resume the last video from its saved playback position.
+- View file information, rename, share, and delete videos.
 
 ### Playback
 - libVLC-based local video playback.
@@ -51,25 +54,26 @@ To install, download the APK on your Android device and open it. Android may ask
 - Change playback speed from 0.5× to 2×.
 - Choose Original, 16:9, 4:3, 1:1, 21:9, and 2.35:1 display ratios.
 - Save and revisit per-video playback bookmarks.
-- Mark videos as favourites, share them, and inspect file information.
+- Mark videos as favourites, share them, and inspect playback information.
 - Use picture-in-picture on supported Android versions.
 
 ### Player controls and design
-- Double-tap the left/right sides to seek 10 seconds.
-- Gesture-based brightness and volume adjustment, with an option to disable gestures.
+- Double-tap the left or right side to seek in 10-second increments; the on-screen feedback displays the cumulative seek amount.
+- Toggle the progress-bar time between total duration and negative remaining time.
+- Gesture-based brightness and system-volume adjustment, with an option to disable gestures.
 - Optional hardware video acceleration.
 - Lock and unlock playback controls.
-- A custom monochrome Liquid Glass design using the real Backdrop effect library: backdrop blur, lens refraction, highlights, and shadows.
+- Expanding player panels use the same theme-aware Kyant0 Backdrop material as the app's glass dialogs.
 - Dark and light library themes.
+- Portrait and landscape player layouts.
 
 ## Screens and navigation
 
 | Section | Purpose |
 | --- | --- |
 | Videos | Filtered and searchable local video library |
-| Folder | Browse videos grouped by their storage folder |
-| Browse | Browse storage and open files through Android's document picker |
-| More | Theme, playback, gesture, and app information settings |
+| Folders | Browse videos grouped by their storage folder |
+| Settings | Theme, playback, gesture, media-management, and app information settings |
 
 The player adapts its controls to portrait and landscape layouts. Some controls, including picture-in-picture, are shown only where the Android version or layout supports them.
 
@@ -88,9 +92,9 @@ The application ID is intentionally retained across the LUCENT rebrand so existi
 | Language | Kotlin |
 | UI | Jetpack Compose + Material 3 |
 | Video playback | VideoLAN libVLC Android |
-| Liquid Glass effects | Kyant0 Backdrop |
+| Liquid Glass effects | Kyant0 Backdrop and Shapes |
 | Device media library | Android MediaStore |
-| File and subtitle picking | Storage Access Framework |
+| File and subtitle picking | Android Storage Access Framework |
 | Build and distribution | GitHub Actions, Gradle, GitHub Releases |
 
 ## Build from source
@@ -110,8 +114,6 @@ The local APK is written to:
 app/build/outputs/apk/production/debug/app-production-debug.apk
 ```
 
-GitHub Actions builds the production-flavour APK and packages it as `lucent.apk`.
-
 ## Automated APK builds
 
 The GitHub Actions workflow:
@@ -120,13 +122,13 @@ The GitHub Actions workflow:
 3. Uploads the APK and checksum as a workflow artifact.
 4. Publishes a GitHub Release with the same files after a successful build on `main`.
 
-Pull requests and implementation branches build and upload the APK artifact. Only successful builds on `main` update the permanent latest-download link.
+Pull requests and implementation branches build and upload the APK artifact. Only successful builds on `main` update the permanent latest-download link. The workflow performs the APK build only; it does not run emulator or instrumentation tests.
 
-See [Build workflow](https://github.com/tejastajane/LiquidPlayer-Android/actions/workflows/android.yml) for build history and logs.
+See the [Build workflow](https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml) for build history and logs.
 
 ## Design direction
 
-LUCENT uses a restrained monochrome palette: black, white, and neutral grey. The intended material is real backdrop-sampled Liquid Glass—not a blue glassmorphism effect. The design contract and implementation constraints are documented in [DESIGN.md](DESIGN.md).
+LUCENT uses a restrained neutral palette: black, white, and grey. It uses real backdrop-sampled Liquid Glass—not generic blue glassmorphism. The design contract and implementation constraints are documented in [DESIGN.md](DESIGN.md).
 
 ## Third-party notices and licensing
 
@@ -134,4 +136,4 @@ Third-party dependency information is recorded in [NOTICE.md](NOTICE.md). The re
 
 ## Feedback
 
-Bug reports and feature requests are welcome through [GitHub Issues](https://github.com/tejastajane/LiquidPlayer-Android/issues). Include your Android version, device model, steps to reproduce, and relevant logs where possible.
+Bug reports and feature requests are welcome through [GitHub Issues](https://github.com/tejastajane/LUCENT-Android/issues). Include your Android version, device model, steps to reproduce, and relevant logs where possible.

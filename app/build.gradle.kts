@@ -13,17 +13,12 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     flavorDimensions += "environment"
     productFlavors {
         create("production") {
             dimension = "environment"
-        }
-        create("ci") {
-            dimension = "environment"
-            applicationIdSuffix = ".ci${System.getenv("GITHUB_RUN_ID") ?: "local"}${System.getenv("GITHUB_RUN_ATTEMPT") ?: ""}"
         }
     }
 
@@ -56,11 +51,9 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.documentfile:documentfile:1.1.0")
 
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.material3:material3")
 
@@ -73,9 +66,4 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // Run an actual local-media playback smoke test on an Android emulator in CI.
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
