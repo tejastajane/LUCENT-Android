@@ -128,6 +128,8 @@ fun LiquidToggle(
             .size(width = 64.dp, height = 48.dp)
             .toggleable(
                 value = checked,
+                interactionSource = null,
+                indication = null,
                 role = Role.Switch,
                 onValueChange = onCheckedChange
             ),
