@@ -56,6 +56,9 @@ jobs:
             printf '%s' "$LUCENT_KEYSTORE_BASE64" | base64 --decode > "$keystore"
             chmod 600 "$keystore"
             echo "LUCENT_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
+            echo "LUCENT_KEYSTORE_PASSWORD=$LUCENT_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "LUCENT_KEY_ALIAS=$LUCENT_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "LUCENT_KEY_PASSWORD=$LUCENT_KEY_PASSWORD" >> "$GITHUB_ENV"
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "Persistent release signing material found."
           else
