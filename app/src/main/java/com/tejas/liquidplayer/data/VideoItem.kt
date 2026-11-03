@@ -1,5 +1,7 @@
 package com.tejas.liquidplayer.data
 
+import java.security.MessageDigest
+
 import android.net.Uri
 import java.util.Locale
 
@@ -39,6 +41,18 @@ fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
     }
 
 internal fun normalizeRelativePath(path: String): String = path.trim().trim('/')
+
+/**
+ * Stable, collision-resistant identifier for media-specific preference keys.
+ * MediaStore IDs are volume-relative and URI.hashCode() can collide; hash the full URI.
+ */
+internal fun mediaPreferenceId(uriString: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(uriString.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { byte ->
+        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+}
 
 internal fun compareNaturalNames(first: String, second: String): Int {
     val firstTokens = naturalSortTokens.findAll(first.lowercase(Locale.ROOT)).map { it.value }.toList()
