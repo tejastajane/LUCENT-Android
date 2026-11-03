@@ -885,6 +885,7 @@ fun VideoPlayerScreen(
                         // One detector arbitrates both axes so the two gestures cannot race.
                         var dragAxis = 0
                         var dragStart = Offset.Zero
+                        var accumulatedDragDistance = Offset.Zero
                         var seekStartMs = 0L
                         var seekTargetMs = 0L
                         var volumeAtDragStart = 0
@@ -902,6 +903,7 @@ fun VideoPlayerScreen(
                             onDragStart = { start ->
                                 dragAxis = 0
                                 dragStart = start
+                                accumulatedDragDistance = Offset.Zero
                                 adjustmentMode = 0
                                 swipeSeekPreview = null
                                 controlsInteractionToken++
@@ -928,11 +930,12 @@ fun VideoPlayerScreen(
                                 if (dragAxis == 2) syncVolumeAfterDrag()
                             },
                             onDrag = { change, dragAmount ->
+                                accumulatedDragDistance += dragAmount
                                 if (dragAxis == 0) {
                                     dragAxis = if (
                                         resolvePlayerDragAxis(
-                                            change.position.x - dragStart.x,
-                                            change.position.y - dragStart.y
+                                            accumulatedDragDistance.x,
+                                            accumulatedDragDistance.y
                                         ) == PlayerDragAxis.Horizontal
                                     ) 1 else 2
                                     if (dragAxis == 1) {
@@ -960,7 +963,7 @@ fun VideoPlayerScreen(
 
                                 when (dragAxis) {
                                     1 -> {
-                                        val dragDistance = change.position.x - dragStart.x
+                                        val dragDistance = accumulatedDragDistance.x
                                         seekTargetMs = horizontalSeekTargetMs(
                                             startPositionMs = seekStartMs,
                                             durationMs = durationMs,
