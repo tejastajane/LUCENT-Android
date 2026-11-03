@@ -61,6 +61,10 @@ fun LiquidPlayerApp(
     var hasMediaScanError by remember { mutableStateOf(false) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var hasMediaManagementAccess by remember { mutableStateOf(canManageMedia(context)) }
+    var showMediaManagementOnboarding by remember { mutableStateOf(false) }
+    var pendingDeleteAfterMediaAccess by remember {
+        mutableStateOf<PendingMediaMutation.Delete?>(null)
+    }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var pendingLegacyMutation by remember { mutableStateOf<PendingMediaMutation?>(null) }
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -145,13 +149,36 @@ fun LiquidPlayerApp(
         ActivityResultContracts.StartActivityForResult()
     ) {
         hasMediaManagementAccess = canManageMedia(context)
-        if (!hasMediaManagementAccess) {
+        if (!hasMediaManagementAccess && pendingDeleteAfterMediaAccess != null) {
+            pendingDeleteAfterMediaAccess = null
             Toast.makeText(
                 context,
-                "Media management access wasn't enabled. Android may still ask before deleting individual files.",
+                "LUCENT needs media management access before it can delete videos.",
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    LaunchedEffect(hasVideoPermission, hasMediaManagementAccess) {
+        if (hasMediaManagementAccess) {
+            settingsPreferences.edit()
+                .putBoolean("media_management_onboarding_completed", true)
+                .apply()
+            showMediaManagementOnboarding = false
+        } else if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            hasVideoPermission &&
+            !settingsPreferences.getBoolean("media_management_onboarding_completed", false)
+        ) {
+            showMediaManagementOnboarding = true
+        }
+    }
+
+    fun finishMediaManagementOnboarding() {
+        settingsPreferences.edit()
+            .putBoolean("media_management_onboarding_completed", true)
+            .apply()
+        showMediaManagementOnboarding = false
     }
 
     fun requestMediaManagementAccess() {
@@ -162,12 +189,31 @@ fun LiquidPlayerApp(
             runCatching {
                 mediaManagementSettingsLauncher.launch(intent)
             }.onFailure {
+                pendingDeleteAfterMediaAccess = null
                 Toast.makeText(context, "Unable to open media management settings.", Toast.LENGTH_LONG).show()
             }
         }
     }
 
     fun startMediaMutation(mutation: PendingMediaMutation) {
+        if (mutation is PendingMediaMutation.Delete) {
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    !canManageMedia(context) -> {
+                    pendingDeleteAfterMediaAccess = mutation
+                    requestMediaManagementAccess()
+                    return
+                }
+                Build.VERSION.SDK_INT in Build.VERSION_CODES.Q..Build.VERSION_CODES.R -> {
+                    Toast.makeText(
+                        context,
+                        "Android 10 and 11 require system approval to delete shared videos. LUCENT-only deletion is supported on Android 12 and newer.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+            }
+        }
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
             ContextCompat.checkSelfPermission(
                 context,
@@ -209,6 +255,14 @@ fun LiquidPlayerApp(
                     Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
                 }
             }
+        }
+    }
+
+    LaunchedEffect(hasMediaManagementAccess, pendingDeleteAfterMediaAccess) {
+        val pendingDelete = pendingDeleteAfterMediaAccess
+        if (hasMediaManagementAccess && pendingDelete != null) {
+            pendingDeleteAfterMediaAccess = null
+            startMediaMutation(pendingDelete)
         }
     }
 
@@ -334,6 +388,8 @@ fun LiquidPlayerApp(
             videos = videos,
             hasVideoPermission = hasVideoPermission,
             hasMediaManagementAccess = hasMediaManagementAccess,
+            showMediaManagementOnboarding = showMediaManagementOnboarding,
+            onMediaManagementOnboardingHandled = ::finishMediaManagementOnboarding,
             isRefreshing = isRefreshing,
             hasMediaScanError = hasMediaScanError,
             favouriteUris = videos.asSequence()
