@@ -199,17 +199,15 @@ fun GlassIconButton(
     } else {
         base.clickable { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() }
     }
-    GlassSurface(
+    KyantDialogMaterialSurface(
         backdrop = backdrop,
         modifier = inputModifier,
-        cornerRadius = 50.dp,
-        surfaceAlpha = 0.075f,
-        navMaterial = true
+        shape = RoundedCornerShape(50.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.align(Alignment.Center).size(22.dp)
         )
     }
