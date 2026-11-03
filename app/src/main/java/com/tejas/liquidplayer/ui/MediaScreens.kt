@@ -582,7 +582,6 @@ private fun FoldersScreen(
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
-                                Icon(Icons.Default.ViewList, contentDescription = "Open folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
