@@ -28,6 +28,7 @@ import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.VideoRepository
 import com.tejas.liquidplayer.data.sortVideosAscending
 import com.tejas.liquidplayer.player.VideoPlayerScreen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -276,19 +277,15 @@ fun LiquidPlayerApp(
                 videos = emptyList()
                 hasMediaScanError = false
             } else {
-                val result = withContext(Dispatchers.IO) {
-                    runCatching { repository.loadVideos() }
+                try {
+                    videos = withContext(Dispatchers.IO) { repository.loadVideos() }
+                    hasMediaScanError = false
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    hasMediaScanError = true
+                    Toast.makeText(context, "Couldn't scan the video library. Try scanning again.", Toast.LENGTH_LONG).show()
                 }
-                result.fold(
-                    onSuccess = {
-                        videos = it
-                        hasMediaScanError = false
-                    },
-                    onFailure = {
-                        hasMediaScanError = true
-                        Toast.makeText(context, "Couldn't scan the video library. Try scanning again.", Toast.LENGTH_LONG).show()
-                    }
-                )
             }
         } finally {
             if (mediaRefreshToken > 0) isRefreshing = false
