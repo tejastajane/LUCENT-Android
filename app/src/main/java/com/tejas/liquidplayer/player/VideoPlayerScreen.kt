@@ -46,7 +46,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -694,13 +693,20 @@ fun VideoPlayerScreen(
                         resumePositionApplied = true
                     }
                 }
+                MediaPlayer.Event.EndReached -> {
+                    mainHandler.post {
+                        audioFocus.abandon()
+                        isPlaying = false
+                    }
+                }
                 MediaPlayer.Event.EncounteredError -> {
                     val shouldRetry = video.uri.scheme == "content" &&
                         cacheRetryAttempted.compareAndSet(false, true)
                     mainHandler.post {
-                        if (shouldRetry) {
+                        if (shouldRetry && audioFocus.hasFocus) {
                             startCacheRetry()
                         } else {
+                            audioFocus.abandon()
                             playbackError = "libVLC failed to open this video even after the local-cache retry. Try another file; diagnostic details are logged."
                             Log.e("LiquidPlayer/VLC", "Playback failed for ${video.uri}")
                         }
@@ -1225,7 +1231,11 @@ fun VideoPlayerScreen(
                             onLongClick = { panel = PlayerPanel.AspectRatio }
                         )
                     }
-                    if (isLandscape) {
+                    if (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                        activity != null &&
+                        context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+                    ) {
                         GlassIconButton(
                             backdrop,
                             Icons.Default.PictureInPictureAlt,
@@ -1233,10 +1243,15 @@ fun VideoPlayerScreen(
                             modifier = Modifier.align(Alignment.CenterEnd).size(width = 48.dp, height = 44.dp),
                             onClick = {
                                 persistProgress()
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null &&
-                                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
-                                    val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
-                                    runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)).build()) }
+                                val ratio = videoAspectRatio.coerceIn(0.42f, 2.39f)
+                                runCatching {
+                                    activity.enterPictureInPictureMode(
+                                        PictureInPictureParams.Builder()
+                                            .setAspectRatio(
+                                                Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000)
+                                            )
+                                            .build()
+                                    )
                                 }
                             }
                         )
