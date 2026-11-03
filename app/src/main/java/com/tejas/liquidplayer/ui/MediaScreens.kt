@@ -1,6 +1,9 @@
 package com.tejas.liquidplayer.ui
 
 import android.graphics.Bitmap
+import android.content.ClipData
+import android.content.Intent
+import android.widget.Toast
 import android.media.MediaMetadataRetriever
 import android.util.Size
 import android.view.HapticFeedbackConstants
@@ -60,7 +63,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -74,6 +80,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -114,9 +122,12 @@ import com.tejas.liquidplayer.ui.liquid.LiquidBottomTabs
 import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
+import com.tejas.liquidplayer.data.sortVideosAscending
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun MainLibraryUi(
@@ -126,6 +137,8 @@ fun MainLibraryUi(
     hasVideoPermission: Boolean,
     onRequestMediaPermission: () -> Unit,
     onPlay: (VideoItem) -> Unit,
+    onRenameVideo: (VideoItem, String) -> Unit,
+    onDeleteVideo: (VideoItem) -> Unit,
     recentVideo: VideoItem?,
     hasResumeHistory: Boolean,
     onChooseVideoFile: () -> Unit,
@@ -168,9 +181,9 @@ fun MainLibraryUi(
                     label = "videos-folders-settings-transition"
                 ) { tab ->
                     when (tab) {
-                        0 -> VideosScreen(backdrop, videos, hasVideoPermission, onRequestMediaPermission, selectedFolder, onClearFolder = { selectedFolder = null }, onPlay = onPlay, onChooseVideoFile = onChooseVideoFile)
+                        0 -> VideosScreen(backdrop, videos, hasVideoPermission, onRequestMediaPermission, selectedFolder, onClearFolder = { selectedFolder = null }, onPlay = onPlay, onChooseVideoFile = onChooseVideoFile, onRenameVideo = onRenameVideo, onDeleteVideo = onDeleteVideo)
                         1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) })
-                        3 -> SearchResultsScreen(backdrop, videos, searchQuery, hasVideoPermission, onRequestMediaPermission, onPlay)
+                        3 -> SearchResultsScreen(backdrop, videos, searchQuery, hasVideoPermission, onRequestMediaPermission, onPlay, onRenameVideo, onDeleteVideo)
                         else -> SettingsScreen(
                             hardwareAcceleration = hardwareAcceleration,
                             onHardwareAccelerationChanged = onHardwareAccelerationChanged,
@@ -218,15 +231,17 @@ private fun SearchResultsScreen(
     query: String,
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
-    onPlay: (VideoItem) -> Unit
+    onPlay: (VideoItem) -> Unit,
+    onRenameVideo: (VideoItem, String) -> Unit,
+    onDeleteVideo: (VideoItem) -> Unit
 ) {
-    val filtered = remember(videos, query) { videos.filter { it.name.contains(query, ignoreCase = true) || it.relativePath.contains(query, ignoreCase = true) } }
+    val filtered = remember(videos, query) { sortVideosAscending(videos.filter { it.name.contains(query, ignoreCase = true) || it.relativePath.contains(query, ignoreCase = true) }) }
     Column(Modifier.fillMaxSize()) {
         Text("Search results", Modifier.padding(start = 22.dp, end = 18.dp, top = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
         else if (filtered.isEmpty()) EmptyState(backdrop, "No matches", "Try another title or folder name.", "No results", {})
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 150.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            items(filtered, key = { it.id }) { item -> VideoRow(item, onClick = { onPlay(item) }) }
+            items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRename = onRenameVideo, onDelete = onDeleteVideo) }
         }
     }
 }
@@ -240,7 +255,9 @@ private fun VideosScreen(
     selectedFolder: String?,
     onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
-    onChooseVideoFile: () -> Unit
+    onChooseVideoFile: () -> Unit,
+    onRenameVideo: (VideoItem, String) -> Unit,
+    onDeleteVideo: (VideoItem) -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
     // Recompute directly from the selected chip. TV detection uses both release
@@ -261,7 +278,7 @@ private fun VideosScreen(
         }
         matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
     }.let { items ->
-        if (category == "Recent") items.sortedByDescending(VideoItem::dateAddedSeconds) else items
+        if (category == "Recent") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -319,7 +336,7 @@ private fun VideosScreen(
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                items(filtered, key = { it.id }) { item -> VideoRow(item, onClick = { onPlay(item) }) }
+                items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRename = onRenameVideo, onDelete = onDeleteVideo) }
             }
         }
     }
@@ -636,7 +653,13 @@ private fun SettingsActionSection(title: String, items: List<ActionItem>) {
 }
 
 @Composable
-private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
+private fun VideoRow(
+    backdrop: LayerBackdrop,
+    item: VideoItem,
+    onClick: () -> Unit,
+    onRename: (VideoItem, String) -> Unit,
+    onDelete: (VideoItem) -> Unit
+) {
     val context = LocalContext.current
     val thumbnail by produceState<Bitmap?>(initialValue = null, item.uri) {
         value = withContext(Dispatchers.IO) {
@@ -653,10 +676,20 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
     }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
     val progress = remember(item.uri, item.durationMs, preferences) {
-        val saved = preferences.getLong("playback_position_${item.uri.toString().hashCode()}", 0L)
+        val saved = preferences.getLong("playback_position_" + item.uri.toString().hashCode(), 0L)
         if (item.durationMs > 0L) (saved.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     }
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    var showActionsSheet by remember(item.id) { mutableStateOf(false) }
+    var showInfoDialog by remember(item.id) { mutableStateOf(false) }
+    var showRenameDialog by remember(item.id) { mutableStateOf(false) }
+    var showDeleteDialog by remember(item.id) { mutableStateOf(false) }
+    var renameValue by remember(item.id, item.name) { mutableStateOf(item.name) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Box(Modifier.width(112.dp).height(70.dp).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             if (thumbnail != null) Image(thumbnail!!.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             else Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
@@ -672,11 +705,144 @@ private fun VideoRow(item: VideoItem, onClick: () -> Unit) {
             Text(listOf(if (item.sizeBytes > 0L) Formatter.formatFileSize(context, item.sizeBytes) else "Local video", if (item.durationMs > 0L) formatDuration(item.durationMs) else null, item.mimeType?.substringAfter('/')?.uppercase(Locale.ROOT)).filterNotNull().joinToString("  ·  "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.folderName, color = Color(0xFFAAAAAA), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Spacer(Modifier.width(5.dp))
-        Icon(Icons.Default.MoreHoriz, contentDescription = "Video options", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(2.dp))
+        IconButton(onClick = { showActionsSheet = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Video options", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+        }
+    }
+
+    if (showActionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showActionsSheet = false },
+            sheetState = sheetState,
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp
+        ) {
+            GlassSurface(
+                backdrop = backdrop,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                cornerRadius = 28.dp,
+                surfaceAlpha = 0.055f,
+                navMaterial = true
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    VideoActionItem(Icons.Default.Info, "Information") {
+                        showActionsSheet = false
+                        showInfoDialog = true
+                    }
+                    VideoActionItem(Icons.Default.Edit, "Rename") {
+                        renameValue = item.name
+                        showActionsSheet = false
+                        showRenameDialog = true
+                    }
+                    VideoActionItem(Icons.Default.Share, "Share") {
+                        showActionsSheet = false
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = item.mimeType?.takeIf { it.startsWith("video/") } ?: "video/*"
+                            putExtra(Intent.EXTRA_STREAM, item.uri)
+                            clipData = ClipData.newUri(context.contentResolver, item.name, item.uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        runCatching {
+                            context.startActivity(Intent.createChooser(shareIntent, "Share video"))
+                        }.onFailure {
+                            Toast.makeText(context, "Unable to share this video.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    VideoActionItem(Icons.Default.Delete, "Delete") {
+                        showActionsSheet = false
+                        showDeleteDialog = true
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+    }
+
+    if (showInfoDialog) {
+        val details = buildString {
+            appendLine("Folder: " + item.folderName)
+            appendLine("Location: " + item.relativePath)
+            if (item.sizeBytes > 0L) appendLine("Size: " + Formatter.formatFileSize(context, item.sizeBytes))
+            if (item.durationMs > 0L) appendLine("Duration: " + formatDuration(item.durationMs))
+            item.mimeType?.let { appendLine("Format: " + it.substringAfter('/').uppercase(Locale.ROOT)) }
+            if (item.dateAddedSeconds > 0L) append("Added: " + DateFormat.getDateTimeInstance().format(Date(item.dateAddedSeconds * 1_000L)))
+        }
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            title = { Text("Information") },
+            text = { Text(details, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Done") } }
+        )
+    }
+
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename video") },
+            text = {
+                OutlinedTextField(
+                    value = renameValue,
+                    onValueChange = { renameValue = it },
+                    singleLine = true,
+                    label = { Text("File name") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val requestedName = renameValue.trim()
+                        if (requestedName.isNotBlank() && requestedName != item.name) {
+                            val extension = item.name.substringAfterLast('.', "")
+                            val finalName = if (extension.isNotBlank() && !requestedName.contains('.')) {
+                                requestedName + "." + extension
+                            } else requestedName
+                            onRename(item, finalName)
+                        }
+                        showRenameDialog = false
+                    },
+                    enabled = renameValue.isNotBlank()
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete video?") },
+            text = { Text("Delete \"" + item.name + "\" from your device? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDelete(item)
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+        )
     }
 }
 
+@Composable
+private fun VideoActionItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        val tint = if (label == "Delete") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Text(label, color = tint, style = MaterialTheme.typography.bodyLarge)
+    }
+}
 @Composable
 private fun EmptyState(
     backdrop: LayerBackdrop,
