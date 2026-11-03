@@ -158,6 +158,7 @@ import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.ui.GlassIconButton
+import com.tejas.liquidplayer.ui.KyantDialogMaterialSurface
 import com.tejas.liquidplayer.ui.GlassSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -251,6 +252,7 @@ fun VideoPlayerScreen(
     var playbackError by remember(video.uri) { mutableStateOf<String?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
     var durationMs by remember(video.uri) { mutableLongStateOf(video.durationMs) }
+    var showRemainingTime by remember(video.uri) { mutableStateOf(false) }
     var audioTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
     var subtitleTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
     var selectedAudioTrackId by remember(video.uri) { mutableIntStateOf(-1) }
@@ -274,6 +276,7 @@ fun VideoPlayerScreen(
     var controlsInteractionToken by remember { mutableIntStateOf(0) }
     var adjustmentMode by remember { mutableIntStateOf(0) }
     var seekFeedbackDirection by remember { mutableIntStateOf(0) }
+    var seekFeedbackAmountMs by remember { mutableLongStateOf(0L) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
@@ -337,6 +340,7 @@ fun VideoPlayerScreen(
         if (seekFeedbackDirection != 0) {
             delay(750L)
             seekFeedbackDirection = 0
+            seekFeedbackAmountMs = 0L
         }
     }
     LaunchedEffect(showAspectRatioFeedback) {
@@ -724,11 +728,13 @@ fun VideoPlayerScreen(
                             when (direction) {
                                 -1 -> {
                                     controller.seekBy(-10_000L)
+                                    seekFeedbackAmountMs = if (seekFeedbackDirection == -1) seekFeedbackAmountMs + 10_000L else 10_000L
                                     seekFeedbackDirection = -1
                                     seekFeedbackToken++
                                 }
                                 1 -> {
                                     controller.seekBy(10_000L)
+                                    seekFeedbackAmountMs = if (seekFeedbackDirection == 1) seekFeedbackAmountMs + 10_000L else 10_000L
                                     seekFeedbackDirection = 1
                                     seekFeedbackToken++
                                 }
@@ -815,6 +821,7 @@ fun VideoPlayerScreen(
         if (seekFeedbackDirection != 0 && !isInPictureInPictureMode) {
             SeekGestureIndicator(
                 direction = seekFeedbackDirection,
+                amountMs = seekFeedbackAmountMs,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -886,8 +893,11 @@ fun VideoPlayerScreen(
                         modifier = Modifier.weight(1f).padding(horizontal = if (isLandscape) 14.dp else 10.dp)
                     )
                     Text(
-                        formatDuration(durationMs),
-                        modifier = Modifier.widthIn(min = 44.dp),
+                        if (showRemainingTime) "-${formatDuration((durationMs - positionMs).coerceAtLeast(0L))}"
+                        else formatDuration(durationMs),
+                        modifier = Modifier.widthIn(min = 54.dp).clickable {
+                            showRemainingTime = !showRemainingTime
+                        },
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium,
                         textAlign = androidx.compose.ui.text.style.TextAlign.End
@@ -1036,8 +1046,8 @@ fun VideoPlayerScreen(
                     else -> Alignment.TopCenter
                 }
             ) {
-                GlassSurface(
-                    backdrop,
+                KyantDialogMaterialSurface(
+                    backdrop = backdrop,
                     modifier = Modifier.width(if (isLandscape) 340.dp else (screenWidth - 24.dp).coerceAtLeast(280.dp))
                         .padding(12.dp)
                         .then(
@@ -1045,13 +1055,10 @@ fun VideoPlayerScreen(
                             else Modifier.heightIn(max = (maxHeight - 24.dp).coerceAtLeast(0.dp)).wrapContentHeight()
                         )
                         .clickable(
-                        indication = null,
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                    ) {},
-                    cornerRadius = 28.dp,
-                    surfaceAlpha = 0.11f,
-                    navMaterial = true,
-                    flatNavMaterial = true
+                            indication = null,
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        ) {},
+                    shape = RoundedCornerShape(28.dp)
                 ) {
                     Column(
                         Modifier.fillMaxWidth()
@@ -1359,6 +1366,7 @@ private fun AspectRatioPanel(onSelect: (String, String?) -> Unit) {
 @Composable
 private fun SeekGestureIndicator(
     direction: Int,
+    amountMs: Long,
     modifier: Modifier = Modifier
 ) {
     val isRewind = direction < 0
@@ -1429,11 +1437,15 @@ private fun SeekGestureIndicator(
         ) {
             Icon(
                 imageVector = if (isRewind) Icons.Default.FastRewind else Icons.Default.FastForward,
-                contentDescription = if (isRewind) "Rewind 10 seconds" else "Forward 10 seconds",
+                contentDescription = if (isRewind) "Rewind ${amountMs / 1_000L} seconds" else "Forward ${amountMs / 1_000L} seconds",
                 tint = Color.White,
                 modifier = Modifier.size(27.dp)
             )
-            Text("10s", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${if (isRewind) "−" else "+"}${(amountMs / 1_000L).coerceAtLeast(0L)}s",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium
+            )
         }
     }
 }

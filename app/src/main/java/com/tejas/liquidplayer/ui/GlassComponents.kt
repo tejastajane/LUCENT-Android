@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
@@ -132,6 +134,44 @@ fun GlassSurface(
             } else {
                 Modifier
             }
+        ),
+        content = content
+    )
+}
+
+
+/**
+ * Dialog-matched Kyant0 glass material for player panels and overlays.
+ * Callers provide their own shape so existing panel geometry stays unchanged.
+ */
+@Composable
+fun KyantDialogMaterialSurface(
+    backdrop: Backdrop,
+    modifier: Modifier = Modifier,
+    shape: Shape,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val surfaceTint = if (isLightTheme) {
+        Color(0xFFFAFAFA).copy(alpha = 0.6f)
+    } else {
+        Color(0xFF121212).copy(alpha = 0.4f)
+    }
+
+    Box(
+        modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                colorControls(
+                    brightness = if (isLightTheme) 0.2f else 0f,
+                    saturation = 1.5f
+                )
+                blur(if (isLightTheme) 16.dp.toPx() else 8.dp.toPx())
+                lens(24.dp.toPx(), 48.dp.toPx(), depthEffect = true)
+            },
+            highlight = { Highlight.Plain },
+            onDrawSurface = { drawRect(surfaceTint) }
         ),
         content = content
     )
