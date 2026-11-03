@@ -38,7 +38,10 @@ import kotlinx.coroutines.withContext
 fun LiquidPlayerApp(
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
-    isInPictureInPictureMode: Boolean = false
+    isInPictureInPictureMode: Boolean = false,
+    incomingVideoUri: Uri? = null,
+    incomingVideoRequestId: Int = 0,
+    onIncomingVideoConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val repository = remember(context) { VideoRepository(context.contentResolver) }
@@ -294,6 +297,36 @@ fun LiquidPlayerApp(
             .putString("last_played_mime", item.mimeType)
             .putString("last_played_volume", item.volumeName)
             .apply()
+    }
+
+    LaunchedEffect(incomingVideoUri, incomingVideoRequestId) {
+        val uri = incomingVideoUri ?: return@LaunchedEffect
+        val mimeType = context.contentResolver.getType(uri)
+        if (mimeType != null && !mimeType.startsWith("video/")) {
+            Toast.makeText(context, "LUCENT can only open video files.", Toast.LENGTH_LONG).show()
+            onIncomingVideoConsumed()
+            return@LaunchedEffect
+        }
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        val name = queryDisplayName(context, uri) ?: "Opened video"
+        openVideo(
+            VideoItem(
+                id = mediaPreferenceId(uri.toString()).take(15).toLong(16),
+                uri = uri,
+                name = name,
+                relativePath = "Opened from another app/",
+                durationMs = 0L,
+                sizeBytes = 0L,
+                dateAddedSeconds = System.currentTimeMillis() / 1_000L,
+                mimeType = mimeType?.takeIf { it.startsWith("video/") }
+            )
+        )
+        onIncomingVideoConsumed()
     }
 
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
