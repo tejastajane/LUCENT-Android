@@ -1,6 +1,7 @@
 package com.tejas.liquidplayer.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import android.content.ClipData
 import android.content.Intent
 import android.widget.Toast
@@ -142,6 +143,8 @@ fun MainLibraryUi(
     hasVideoPermission: Boolean,
     hasMediaManagementAccess: Boolean,
     isRefreshing: Boolean,
+    showMediaManagementPrompt: Boolean,
+    onDismissMediaManagementPrompt: () -> Unit,
     onRequestMediaPermission: () -> Unit,
     onRequestMediaManagementAccess: () -> Unit,
     onPlay: (VideoItem) -> Unit,
@@ -162,6 +165,20 @@ fun MainLibraryUi(
     var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+
+    BackHandler(enabled = selectedTab != 0 || searchExpanded) {
+        when {
+            searchExpanded -> {
+                searchExpanded = false
+                searchQuery = ""
+            }
+            selectedTab != 0 -> {
+                selectedFolder = null
+                onTabSelected(0)
+            }
+        }
+    }
+
     val showRecentPlayState = remember { mutableStateOf(true) }
     val scrollConnection = remember {
         object : NestedScrollConnection {
@@ -237,6 +254,24 @@ fun MainLibraryUi(
             onSearchQueryChange = { searchQuery = it },
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
         )
+        if (showMediaManagementPrompt) {
+            GlassDialog(
+                backdrop = backdrop,
+                title = "Manage your media",
+                onDismissRequest = onDismissMediaManagementPrompt,
+                content = {
+                    Text(
+                        "Allow LUCENT to manage videos on your device. With this one-time access, Android won't ask for confirmation every time you delete a video. You can change this permission later in Settings.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                actions = {
+                    TextButton(onClick = onDismissMediaManagementPrompt) { Text("Not now") }
+                    TextButton(onClick = onRequestMediaManagementAccess) { Text("Continue") }
+                }
+            )
+        }
     }
 }
 
@@ -289,12 +324,12 @@ private fun VideosScreen(
             "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder && item.durationMs >= 90L * 60L * 1_000L
             "TV Shows" -> looksLikeTvEpisode
             "Anime" -> isAnime
-            "Recent" -> true
+            "Latest" -> true
             else -> true
         }
         matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
     }.let { items ->
-        if (category == "Recent") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
+        if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -314,7 +349,7 @@ private fun VideosScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("All", "Movies", "TV Shows", "Anime", "Recent").forEach { label ->
+            listOf("All", "Latest", "Movies", "TV Shows", "Anime").forEach { label ->
                 FilterChip(
                     selected = category == label,
                     onClick = { category = label },
