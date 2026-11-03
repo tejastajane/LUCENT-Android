@@ -56,10 +56,9 @@ internal enum class PlayerDragAxis {
 internal fun resolvePlayerDragAxis(
     dragDistanceX: Float,
     dragDistanceY: Float,
-    horizontalDominanceRatio: Float = 1.15f
-): PlayerDragAxis =
-    if (abs(dragDistanceX) > abs(dragDistanceY) * horizontalDominanceRatio) {
-        PlayerDragAxis.Horizontal
-    } else {
-        PlayerDragAxis.Vertical
-    }
+    dominanceRatio: Float = 1.15f
+): PlayerDragAxis? = when {
+    abs(dragDistanceX) > abs(dragDistanceY) * dominanceRatio -> PlayerDragAxis.Horizontal
+    abs(dragDistanceY) > abs(dragDistanceX) * dominanceRatio -> PlayerDragAxis.Vertical
+    else -> null
+}
