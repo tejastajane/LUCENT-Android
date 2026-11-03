@@ -36,3 +36,33 @@ class PlayerGestureMathTest {
         assertEquals(90_000L, horizontalSeekTargetMs(90_000L, 500_000L, 200f, 0f))
     }
 }
+
+class PlayerGestureAxisTest {
+    @Test
+    fun horizontalDominantMovementSelectsSeek() {
+        assertEquals(
+            PlayerDragAxis.Horizontal,
+            resolvePlayerDragAxis(80f, 20f)
+        )
+    }
+
+    @Test
+    fun verticalDominantMovementSelectsBrightnessOrVolume() {
+        assertEquals(
+            PlayerDragAxis.Vertical,
+            resolvePlayerDragAxis(20f, 80f)
+        )
+    }
+
+    @Test
+    fun ambiguousDiagonalMovementDefaultsToVertical() {
+        assertEquals(
+            PlayerDragAxis.Vertical,
+            resolvePlayerDragAxis(40f, 40f)
+        )
+        assertEquals(
+            PlayerDragAxis.Vertical,
+            resolvePlayerDragAxis(46f, 40f)
+        )
+    }
+}
