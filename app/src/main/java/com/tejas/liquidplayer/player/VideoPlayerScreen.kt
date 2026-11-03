@@ -12,10 +12,13 @@ import kotlinx.coroutines.isActive
 import android.os.SystemClock
 import android.text.format.Formatter
 import kotlin.math.roundToInt
+import kotlin.math.abs
 
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -30,9 +33,13 @@ import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -148,6 +155,7 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kyant.backdrop.drawBackdrop
@@ -197,6 +205,18 @@ fun VideoPlayerScreen(
         audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
     }
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
+    val audioFocus = remember(context, controller) {
+        PlaybackAudioFocus(context) {
+            if (runCatching { controller.player.isPlaying }.getOrDefault(false)) {
+                controller.player.pause()
+                Toast.makeText(
+                    context,
+                    "Playback paused because another app or a phone call needs audio.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val lastBrightnessKey = "last_player_brightness"
     val preferenceSuffix = remember(video.uri) { mediaPreferenceId(video.uri.toString()) }
@@ -300,6 +320,7 @@ fun VideoPlayerScreen(
     var seekFeedbackDirection by remember { mutableIntStateOf(0) }
     var seekFeedbackAmountMs by remember { mutableLongStateOf(0L) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
+    var swipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
     var showAspectRatioFeedback by remember { mutableStateOf(false) }
@@ -335,6 +356,22 @@ fun VideoPlayerScreen(
             .apply()
     }
 
+    fun togglePlayback() {
+        val playingNow = runCatching { controller.player.isPlaying }.getOrDefault(false)
+        if (playingNow) {
+            controller.player.pause()
+            audioFocus.abandon()
+        } else if (audioFocus.request()) {
+            controller.player.play()
+        } else {
+            Toast.makeText(
+                context,
+                "LUCENT couldn't get audio focus. Another app or a phone call may be using audio.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     fun startCacheRetry() {
         cacheRetryJob?.cancel()
         playbackError = "Preparing a safe local copy for playback…"
@@ -346,6 +383,55 @@ fun VideoPlayerScreen(
             cacheRetryProgress = null
             cacheRetryJob = null
             playbackError = error
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, activity, controller, audioFocus) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (
+                event == Lifecycle.Event.ON_STOP &&
+                activity?.isInPictureInPictureMode != true &&
+                runCatching { controller.player.isPlaying }.getOrDefault(false)
+            ) {
+                controller.player.pause()
+                audioFocus.abandon()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    DisposableEffect(context, controller, audioFocus, isPlaying) {
+        if (isPlaying) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (
+                        intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY &&
+                        runCatching { controller.player.isPlaying }.getOrDefault(false)
+                    ) {
+                        controller.player.pause()
+                        audioFocus.abandon()
+                        Toast.makeText(
+                            context,
+                            "Playback paused because the audio output was disconnected.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+            val registered = runCatching {
+                ContextCompat.registerReceiver(
+                    context,
+                    receiver,
+                    IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+            }.isSuccess
+            onDispose {
+                if (registered) runCatching { context.unregisterReceiver(receiver) }
+            }
+        } else {
+            onDispose { }
         }
     }
 
@@ -438,7 +524,7 @@ fun VideoPlayerScreen(
         }
     }
 
-    DisposableEffect(activity, controller) {
+    DisposableEffect(activity, controller, audioFocus) {
         val originalOrientation = activity?.requestedOrientation
         val originalVolumeControlStream = activity?.volumeControlStream ?: AudioManager.USE_DEFAULT_STREAM_TYPE
         val originalKeepScreenOn = activity?.window?.let { window ->
@@ -478,17 +564,23 @@ fun VideoPlayerScreen(
                 window.attributes = params
             }
             if (activity != null) activity.requestedOrientation = originalOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            audioFocus.close()
             controller.close()
         }
     }
 
     LaunchedEffect(video.uri, controller, attachedController) {
         if (attachedController !== controller) return@LaunchedEffect
+        if (!audioFocus.request()) {
+            playbackError = "Audio focus is unavailable. Press Play when the other audio interruption has ended."
+            return@LaunchedEffect
+        }
         resumePositionApplied = savedPositionMs < 1_500L
         val immediateError = controller.play(video.uri)
         if (immediateError != null) {
+            audioFocus.abandon()
             if (video.uri.scheme == "content" && cacheRetryAttempted.compareAndSet(false, true)) {
-                startCacheRetry()
+                if (audioFocus.request()) startCacheRetry() else playbackError = immediateError
             } else {
                 playbackError = immediateError
             }
@@ -793,7 +885,7 @@ fun VideoPlayerScreen(
                                     seekFeedbackDirection = 1
                                     seekFeedbackToken++
                                 }
-                                else -> controller.togglePlayPause()
+                                else -> togglePlayback()
                             }
                             // Seeking must not force the transport controls on screen.
                             // Keep their current visibility exactly as it was before the double tap.
@@ -801,71 +893,125 @@ fun VideoPlayerScreen(
                         } else null
                     )
                 }
-                .pointerInput(gesturesEnabled, video.uri, controlsLocked) {
+                .pointerInput(gesturesEnabled, video.uri, controlsLocked, durationMs) {
                     if (gesturesEnabled && !controlsLocked) {
+                        // 0 = undecided, 1 = horizontal seek, 2 = vertical adjustment.
+                        // One detector arbitrates both axes so the two gestures cannot race.
+                        var dragAxis = 0
+                        var dragStart = Offset.Zero
+                        var seekStartMs = 0L
+                        var seekTargetMs = 0L
                         var volumeAtDragStart = 0
                         var accumulatedVolumeDelta = 0f
                         var lastAppliedVolume = 0
 
-                        detectVerticalDragGestures(
-                            onDragStart = { start ->
-                                verticalGestureZone = when {
-                                    start.x < size.width * 0.40f -> -1
-                                    start.x > size.width * 0.60f -> 1
-                                    else -> 0
-                                }
-                                adjustmentMode = verticalGestureZone
-                                controlsInteractionToken++
+                        fun syncVolumeAfterDrag() {
+                            val finalVolume = audioManager
+                                .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                .coerceIn(0, systemVolumeMax)
+                            if (volume != finalVolume) volume = finalVolume
+                        }
 
-                                if (verticalGestureZone == 1) {
-                                    volumeAtDragStart = audioManager
-                                        .getStreamVolume(AudioManager.STREAM_MUSIC)
-                                        .coerceIn(0, systemVolumeMax)
-                                    lastAppliedVolume = volumeAtDragStart
-                                    accumulatedVolumeDelta = 0f
-                                    if (volume != volumeAtDragStart) volume = volumeAtDragStart
+                        detectDragGestures(
+                            onDragStart = { start ->
+                                dragAxis = 0
+                                dragStart = start
+                                adjustmentMode = 0
+                                swipeSeekPreview = null
+                                controlsInteractionToken++
+                            },
+                            onDragEnd = {
+                                when (dragAxis) {
+                                    1 -> {
+                                        swipeSeekPreview?.let { preview ->
+                                            if (preview.deltaMs != 0L) {
+                                                controller.seekTo(preview.targetPositionMs)
+                                                positionMs = preview.targetPositionMs
+                                                seekFeedbackDirection = if (preview.deltaMs > 0L) 1 else -1
+                                                seekFeedbackAmountMs = abs(preview.deltaMs)
+                                                seekFeedbackToken++
+                                            }
+                                        }
+                                        swipeSeekPreview = null
+                                    }
+                                    2 -> syncVolumeAfterDrag()
                                 }
                             },
-                            onVerticalDrag = { change, dragAmount ->
-                                controlsInteractionToken++
-                                when (verticalGestureZone) {
-                                    -1 -> {
-                                        adjustmentMode = -1
-                                        brightness = (brightness - dragAmount / size.height * 1.75f).coerceIn(0f, 1f)
-                                        playerPreferences.edit().putFloat(lastBrightnessKey, brightness).apply()
-                                        activity?.window?.let { window ->
-                                            val params = window.attributes
-                                            params.screenBrightness = brightness
-                                            window.attributes = params
+                            onDragCancel = {
+                                swipeSeekPreview = null
+                                if (dragAxis == 2) syncVolumeAfterDrag()
+                            },
+                            onDrag = { change, dragAmount ->
+                                if (dragAxis == 0) {
+                                    dragAxis = if (abs(dragAmount.x) > abs(dragAmount.y) * 1.15f) 1 else 2
+                                    if (dragAxis == 1) {
+                                        seekStartMs = runCatching { controller.player.time }
+                                            .getOrDefault(positionMs)
+                                            .coerceIn(0L, durationMs.coerceAtLeast(0L))
+                                        seekTargetMs = seekStartMs
+                                    } else {
+                                        verticalGestureZone = when {
+                                            dragStart.x < size.width * 0.40f -> -1
+                                            dragStart.x > size.width * 0.60f -> 1
+                                            else -> 0
+                                        }
+                                        adjustmentMode = verticalGestureZone
+                                        if (verticalGestureZone == 1) {
+                                            volumeAtDragStart = audioManager
+                                                .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                                .coerceIn(0, systemVolumeMax)
+                                            lastAppliedVolume = volumeAtDragStart
+                                            accumulatedVolumeDelta = 0f
+                                            if (volume != volumeAtDragStart) volume = volumeAtDragStart
                                         }
                                     }
+                                }
+
+                                when (dragAxis) {
                                     1 -> {
-                                        adjustmentMode = 1
-                                        // Accumulate fractional motion across pointer events. Rounding
-                                        // every event independently dropped most small finger movements.
-                                        accumulatedVolumeDelta -= dragAmount / size.height * systemVolumeMax * 1.75f
-                                        val targetVolume = (volumeAtDragStart + accumulatedVolumeDelta.roundToInt())
-                                            .coerceIn(0, systemVolumeMax)
-                                        if (targetVolume != lastAppliedVolume) {
-                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
-                                            lastAppliedVolume = targetVolume
-                                            volume = targetVolume
+                                        val dragDistance = change.position.x - dragStart.x
+                                        seekTargetMs = horizontalSeekTargetMs(
+                                            startPositionMs = seekStartMs,
+                                            durationMs = durationMs,
+                                            dragDistancePx = dragDistance,
+                                            surfaceWidthPx = size.width.toFloat()
+                                        )
+                                        swipeSeekPreview = HorizontalSeekPreview(seekStartMs, seekTargetMs)
+                                        controlsInteractionToken++
+                                    }
+                                    2 -> {
+                                        controlsInteractionToken++
+                                        when (verticalGestureZone) {
+                                            -1 -> {
+                                                adjustmentMode = -1
+                                                brightness = (
+                                                    brightness - dragAmount.y / size.height * 1.75f
+                                                ).coerceIn(0f, 1f)
+                                                playerPreferences.edit().putFloat(lastBrightnessKey, brightness).apply()
+                                                activity?.window?.let { window ->
+                                                    val params = window.attributes
+                                                    params.screenBrightness = brightness
+                                                    window.attributes = params
+                                                }
+                                            }
+                                            1 -> {
+                                                adjustmentMode = 1
+                                                // Accumulate fractional movement to keep low-speed volume changes precise.
+                                                accumulatedVolumeDelta -=
+                                                    dragAmount.y / size.height * systemVolumeMax * 1.75f
+                                                val targetVolume = (
+                                                    volumeAtDragStart + accumulatedVolumeDelta.roundToInt()
+                                                ).coerceIn(0, systemVolumeMax)
+                                                if (targetVolume != lastAppliedVolume) {
+                                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+                                                    lastAppliedVolume = targetVolume
+                                                    volume = targetVolume
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 change.consume()
-                            },
-                            onDragEnd = {
-                                val finalVolume = audioManager
-                                    .getStreamVolume(AudioManager.STREAM_MUSIC)
-                                    .coerceIn(0, systemVolumeMax)
-                                if (volume != finalVolume) volume = finalVolume
-                            },
-                            onDragCancel = {
-                                val finalVolume = audioManager
-                                    .getStreamVolume(AudioManager.STREAM_MUSIC)
-                                    .coerceIn(0, systemVolumeMax)
-                                if (volume != finalVolume) volume = finalVolume
                             }
                         )
                     }
@@ -879,6 +1025,34 @@ fun VideoPlayerScreen(
                 amountMs = seekFeedbackAmountMs,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        swipeSeekPreview?.takeIf { !isInPictureInPictureMode }?.let { preview ->
+            Column(
+                Modifier.align(Alignment.Center)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color.Black.copy(alpha = 0.76f))
+                    .padding(horizontal = 22.dp, vertical = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    if (preview.deltaMs < 0L) "Rewind" else "Forward",
+                    color = Color.White.copy(alpha = 0.82f),
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Text(
+                    formatDuration(preview.targetPositionMs),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${if (preview.deltaMs < 0L) "−" else "+"}${abs(preview.deltaMs) / 1_000L}s",
+                    color = Color.White.copy(alpha = 0.76f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
 
         if (adjustmentMode != 0 && !isInPictureInPictureMode) {
@@ -1028,7 +1202,7 @@ fun VideoPlayerScreen(
                             if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             if (isPlaying) "Pause" else "Play",
                             modifier = Modifier.size(width = if (isLandscape) 80.dp else 58.dp, height = if (isLandscape) 52.dp else 48.dp),
-                            onClick = { controller.togglePlayPause() }
+                            onClick = { togglePlayback() }
                         )
                         GlassIconButton(
                             backdrop, Icons.Default.SkipNext, "Next video",
