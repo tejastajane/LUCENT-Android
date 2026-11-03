@@ -37,7 +37,8 @@ jobs:
         with:
           gradle-version: "9.7.1"
 
-      - name: Build production APK
+      # TEST 1: The production APK must build successfully.
+      - name: Test 1 - Build production APK
         run: gradle --no-daemon --stacktrace :app:assembleProductionDebug
 
       - name: Prepare APK with stable filename
@@ -56,21 +57,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Prepare emulator diagnostics folder
-        if: always()
-        run: mkdir -p app/build/diagnostics/emulator-install
-
       - name: Enable KVM for Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Validate emulator install script
-        run: bash -n .github/scripts/install-apk-on-emulator.sh
-
-      - name: Install APK on Android 16 emulator
-        id: emulator-install
+      # TEST 2: Install the exact APK produced above on a clean Android emulator.
+      # adb prints "Success" or the exact INSTALL_FAILED_* reason in the Actions log.
+      - name: Test 2 - Install APK on Android 16 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -80,16 +75,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           emulator-boot-timeout: 900
-          script: bash .github/scripts/install-apk-on-emulator.sh
-
-      - name: Upload Android emulator install diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-emulator-install-diagnostics
-          path: app/build/diagnostics/emulator-install/
-          if-no-files-found: warn
-          retention-days: 14
+          script: adb install app/build/distributions/lucent.apk
 
       - name: Publish latest LUCENT APK release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
