@@ -766,7 +766,7 @@ fun VideoPlayerScreen(
                                     }
                                     1 -> {
                                         adjustmentMode = 1
-                                        val volumeDelta = (dragAmount / size.height * systemVolumeMax * 2.75f).roundToInt()
+                                        val volumeDelta = (dragAmount / size.height * systemVolumeMax * 1.375f).roundToInt()
                                         val targetVolume = (volume - volumeDelta).coerceIn(0, systemVolumeMax)
                                         if (targetVolume != volume) {
                                             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
@@ -1414,7 +1414,7 @@ private fun AdjustmentIndicator(icon: ImageVector, value: String, level: Float, 
         Icon(icon, label, tint = Color.White, modifier = Modifier.size(23.dp))
         Text(value, color = Color.White, style = MaterialTheme.typography.labelMedium)
         Box(Modifier.width(3.dp).height(80.dp), contentAlignment = Alignment.BottomCenter) {
-            Box(Modifier.fillMaxWidth().fillMaxHeight(level.coerceIn(0.02f, 1f)).clip(RoundedCornerShape(50.dp)).background(Color.White))
+            Box(Modifier.fillMaxWidth().fillMaxHeight(level.coerceIn(0f, 1f)).clip(RoundedCornerShape(50.dp)).background(Color.White))
         }
     }
 }
