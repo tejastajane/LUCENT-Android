@@ -27,9 +27,10 @@ private val naturalSortTokens = Regex("""\d+|\D+""")
  */
 fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
     items.sortedWith { first, second ->
-        val nameOrder = compareNaturalNames(first.name, second.name)
-        if (nameOrder != 0) nameOrder
-        else compareNaturalNames(first.relativePath, second.relativePath)
+        // Group files by their show/season folder first, then order episodes by filename.
+        val folderOrder = compareNaturalNames(first.relativePath, second.relativePath)
+        if (folderOrder != 0) folderOrder
+        else compareNaturalNames(first.name, second.name)
     }
 
 private fun compareNaturalNames(first: String, second: String): Int {
