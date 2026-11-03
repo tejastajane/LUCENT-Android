@@ -13,8 +13,13 @@ data class VideoItem(
     val dateAddedSeconds: Long,
     val mimeType: String? = null
 ) {
+    /** Normalized MediaStore path used as folder identity, not merely its display name. */
+    val folderPath: String
+        get() = normalizeRelativePath(relativePath)
+
+    /** Friendly leaf label; use [folderPath] for identity and filtering. */
     val folderName: String
-        get() = relativePath.trimEnd('/').substringAfterLast('/').ifBlank { "Internal storage" }
+        get() = folderPath.substringAfterLast('/').ifBlank { "Internal storage" }
 }
 
 data class TrackOption(val id: Int, val label: String)
@@ -33,7 +38,9 @@ fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
         else compareNaturalNames(first.name, second.name)
     }
 
-private fun compareNaturalNames(first: String, second: String): Int {
+internal fun normalizeRelativePath(path: String): String = path.trim().trim('/')
+
+internal fun compareNaturalNames(first: String, second: String): Int {
     val firstTokens = naturalSortTokens.findAll(first.lowercase(Locale.ROOT)).map { it.value }.toList()
     val secondTokens = naturalSortTokens.findAll(second.lowercase(Locale.ROOT)).map { it.value }.toList()
     val sharedTokenCount = minOf(firstTokens.size, secondTokens.size)
