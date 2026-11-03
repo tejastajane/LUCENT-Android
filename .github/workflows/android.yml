@@ -23,6 +23,9 @@ jobs:
     name: Build production APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      LUCENT_VERSION_CODE: ${{ github.run_number }}
+      LUCENT_VERSION_NAME: 0.1.${{ github.run_number }}
     outputs:
       release_signed: ${{ steps.signing.outputs.available }}
     steps:
