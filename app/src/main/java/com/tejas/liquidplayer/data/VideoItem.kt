@@ -13,11 +13,16 @@ data class VideoItem(
     val durationMs: Long,
     val sizeBytes: Long,
     val dateAddedSeconds: Long,
-    val mimeType: String? = null
+    val mimeType: String? = null,
+    val volumeName: String? = null
 ) {
-    /** Normalized MediaStore path used as folder identity, not merely its display name. */
+    /** Normalized path is retained for display; storage volume is part of folder identity. */
     val folderPath: String
         get() = normalizeRelativePath(relativePath)
+
+    /** A relative path alone is not unique across internal and removable storage volumes. */
+    val folderIdentity: String
+        get() = buildFolderIdentity(volumeName, relativePath)
 
     /** Friendly leaf label; use [folderPath] for identity and filtering. */
     val folderName: String
@@ -41,6 +46,11 @@ fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
     }
 
 internal fun normalizeRelativePath(path: String): String = path.trim().trim('/')
+
+internal fun buildFolderIdentity(volumeName: String?, relativePath: String): String {
+    val normalizedVolume = volumeName?.trim()?.takeIf { it.isNotEmpty() } ?: "legacy"
+    return "$normalizedVolume|${normalizeRelativePath(relativePath)}"
+}
 
 private const val RESUME_END_THRESHOLD_MS = 1_500L
 
