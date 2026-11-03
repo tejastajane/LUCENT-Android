@@ -22,12 +22,14 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.media.MediaMetadataRetriever
+import android.media.AudioManager
 import android.os.Build
 import android.util.Rational
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -180,8 +182,15 @@ fun VideoPlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    val systemVolumeMax = remember(audioManager) {
+        audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    }
     val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
+    val lastBrightnessKey = "last_player_brightness"
     val progressKey = remember(video.uri) { "playback_position_${video.uri.toString().hashCode()}" }
     val favouriteKey = remember(video.uri) { "favourite_${video.uri.toString().hashCode()}" }
     val preferenceSuffix = remember(video.uri) { video.uri.toString().hashCode().toString() }
@@ -248,11 +257,19 @@ fun VideoPlayerScreen(
     var selectedSubtitleTrackId by remember(video.uri) { mutableIntStateOf(-1) }
     var trackSelectionMessage by remember(video.uri) { mutableStateOf<String?>(null) }
     var resumePositionApplied by remember(video.uri) { mutableStateOf(savedPositionMs < 1_500L) }
-    var brightness by remember(video.uri) { mutableFloatStateOf(
-        activity?.window?.attributes?.screenBrightness?.takeIf { it in 0.05f..1f } ?: 0.8f
-    ) }
+    var brightness by remember(video.uri, playerPreferences) {
+        mutableFloatStateOf(
+            playerPreferences.getFloat(
+                lastBrightnessKey,
+                activity?.window?.attributes?.screenBrightness?.takeIf { it in 0f..1f } ?: 0.8f
+            ).coerceIn(0f, 1f)
+        )
+    }
     var speed by remember(video.uri) { mutableFloatStateOf(1f) }
-    var volume by remember(controller, video.uri) { mutableIntStateOf(runCatching { controller.player.volume }.getOrDefault(100).coerceIn(0, 200)) }
+    // The Android media stream is the single source of truth for both gesture and hardware volume.
+    var volume by remember(video.uri, audioManager) {
+        mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, systemVolumeMax))
+    }
     var verticalGestureZone by remember { mutableIntStateOf(0) }
     var controlsInteractionToken by remember { mutableIntStateOf(0) }
     var adjustmentMode by remember { mutableIntStateOf(0) }
@@ -325,6 +342,21 @@ fun VideoPlayerScreen(
     LaunchedEffect(showAspectRatioFeedback) {
         if (showAspectRatioFeedback) { delay(1_200L); showAspectRatioFeedback = false }
     }
+    // A new video inherits the last brightness selected in the player.
+    LaunchedEffect(video.uri, activity) {
+        activity?.window?.let { window ->
+            val params = window.attributes
+            params.screenBrightness = brightness.coerceIn(0f, 1f)
+            window.attributes = params
+        }
+    }
+    // Keep the display awake only while media is actively playing (including PiP).
+    LaunchedEffect(activity, isPlaying) {
+        activity?.window?.let { window ->
+            if (isPlaying) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     LaunchedEffect(video.uri, activity, manualRotation) {
         val dimensions = withContext(Dispatchers.IO) {
             val retriever = MediaMetadataRetriever()
@@ -365,6 +397,11 @@ fun VideoPlayerScreen(
 
     DisposableEffect(activity, controller) {
         val originalOrientation = activity?.requestedOrientation
+        val originalVolumeControlStream = activity?.volumeControlStream ?: AudioManager.USE_DEFAULT_STREAM_TYPE
+        val originalKeepScreenOn = activity?.window?.let { window ->
+            window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+        } ?: false
+        activity?.volumeControlStream = AudioManager.STREAM_MUSIC
         val decorView = activity?.window?.decorView
         val windowController = activity?.let {
             WindowInsetsControllerCompat(it.window, it.window.decorView)
@@ -387,6 +424,11 @@ fun VideoPlayerScreen(
                 decorView.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
             }
             windowController?.show(WindowInsetsCompat.Type.systemBars())
+            if (activity != null) activity.volumeControlStream = originalVolumeControlStream
+            activity?.window?.let { window ->
+                if (originalKeepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
             activity?.window?.let { window ->
                 val params = window.attributes
                 params.screenBrightness = originalBrightness
@@ -480,6 +522,8 @@ fun VideoPlayerScreen(
             positionMs = currentTime
             if (mediaLength > 0L) durationMs = mediaLength
             isPlaying = playingNow
+            // Reflect physical volume-button changes in the on-screen gesture indicator.
+            volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, systemVolumeMax)
             if (!resumePositionApplied && playingNow && mediaLength > 0L) {
                 if (savedPositionMs >= 1_500L && savedPositionMs < mediaLength - 2_500L) {
                     controller.seekTo(savedPositionMs)
@@ -712,7 +756,8 @@ fun VideoPlayerScreen(
                                 when (verticalGestureZone) {
                                     -1 -> {
                                         adjustmentMode = -1
-                                        brightness = (brightness - dragAmount / size.height * 1.75f).coerceIn(0.05f, 1f)
+                                        brightness = (brightness - dragAmount / size.height * 1.75f).coerceIn(0f, 1f)
+                                        playerPreferences.edit().putFloat(lastBrightnessKey, brightness).apply()
                                         activity?.window?.let { window ->
                                             val params = window.attributes
                                             params.screenBrightness = brightness
@@ -721,8 +766,12 @@ fun VideoPlayerScreen(
                                     }
                                     1 -> {
                                         adjustmentMode = 1
-                                        volume = (volume - (dragAmount / size.height * 275f).roundToInt()).coerceIn(0, 200)
-                                        runCatching { controller.player.volume = volume }
+                                        val volumeDelta = (dragAmount / size.height * systemVolumeMax * 2.75f).roundToInt()
+                                        val targetVolume = (volume - volumeDelta).coerceIn(0, systemVolumeMax)
+                                        if (targetVolume != volume) {
+                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+                                            volume = targetVolume
+                                        }
                                     }
                                 }
                                 change.consume()
@@ -744,8 +793,8 @@ fun VideoPlayerScreen(
             Box(Modifier.align(if (adjustmentMode < 0) Alignment.CenterEnd else Alignment.CenterStart).padding(start = if (adjustmentMode > 0) 28.dp else 0.dp, end = if (adjustmentMode < 0) 28.dp else 0.dp)) {
                 AdjustmentIndicator(
                     icon = if (adjustmentMode < 0) Icons.Default.Brightness6 else Icons.Default.VolumeUp,
-                    value = if (adjustmentMode < 0) "${(brightness * 100).toInt()}%" else "${(volume / 2).coerceIn(0, 100)}%",
-                    level = if (adjustmentMode < 0) brightness else (volume / 200f),
+                    value = if (adjustmentMode < 0) "${(brightness * 100).roundToInt()}%" else "${(volume.toFloat() / systemVolumeMax * 100f).roundToInt()}%",
+                    level = if (adjustmentMode < 0) brightness else (volume.toFloat() / systemVolumeMax),
                     label = if (adjustmentMode < 0) "Brightness" else "Volume"
                 )
             }
