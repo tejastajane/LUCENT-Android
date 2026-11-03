@@ -772,6 +772,19 @@ private fun SettingsScreen(
                                 }
                             ),
                             ActionItem(
+                                Icons.Default.Info,
+                                "Third-party notices",
+                                "Licences and component source information",
+                                {
+                                    val notices = runCatching {
+                                        context.assets.open("THIRD_PARTY_NOTICES.md")
+                                            .bufferedReader()
+                                            .use { it.readText() }
+                                    }.getOrElse { "Third-party notices are available in the LUCENT source repository." }
+                                    onShowInfoDialog("Third-party notices", notices)
+                                }
+                            ),
+                            ActionItem(
                                 Icons.Default.Bookmark,
                                 "Project source",
                                 "Browse the source code on GitHub",
@@ -781,7 +794,7 @@ private fun SettingsScreen(
                                     }.onFailure {
                                         onShowInfoDialog(
                                             "Project source",
-                                            "The project page could not be opened automatically. Visit: https://github.com/tejastajane/LiquidPlayer-Android"
+                                            "The project page could not be opened automatically. Visit: https://github.com/tejastajane/LUCENT-Android"
                                         )
                                     }
                                 }
