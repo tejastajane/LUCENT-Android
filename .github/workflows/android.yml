@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - main2
       - "implementation/**"
   pull_request:
     branches:
@@ -11,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: lucent-apk-${{ github.ref }}
@@ -22,32 +23,89 @@ jobs:
     name: Build production APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      release_signed: ${{ steps.signing.outputs.available }}
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Gradle 9.7.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.7.1"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
 
-      - name: Build production APK
-        run: gradle --no-daemon --stacktrace :app:assembleProductionDebug
+      - name: Prepare persistent release signing key
+        id: signing
+        env:
+          LUCENT_KEYSTORE_BASE64: ${{ secrets.LUCENT_KEYSTORE_BASE64 }}
+          LUCENT_KEYSTORE_PASSWORD: ${{ secrets.LUCENT_KEYSTORE_PASSWORD }}
+          LUCENT_KEY_ALIAS: ${{ secrets.LUCENT_KEY_ALIAS }}
+          LUCENT_KEY_PASSWORD: ${{ secrets.LUCENT_KEY_PASSWORD }}
+          LUCENT_SIGNING_CERT_SHA256: ${{ secrets.LUCENT_SIGNING_CERT_SHA256 }}
+        run: |
+          if [ -n "$LUCENT_KEYSTORE_BASE64" ] && \
+             [ -n "$LUCENT_KEYSTORE_PASSWORD" ] && \
+             [ -n "$LUCENT_KEY_ALIAS" ] && \
+             [ -n "$LUCENT_KEY_PASSWORD" ] && \
+             [ -n "$LUCENT_SIGNING_CERT_SHA256" ]; then
+            keystore="$RUNNER_TEMP/lucent-release.jks"
+            printf '%s' "$LUCENT_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            chmod 600 "$keystore"
+            echo "LUCENT_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Persistent release signing material found."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Stable release signing secrets are not configured. This run will produce a debug/testing APK and will not publish a release."
+          fi
 
-      - name: Prepare APK with stable filename
+      - name: Build signed release APK or branch testing APK
+        id: build
+        env:
+          RELEASE_SIGNING_AVAILABLE: ${{ steps.signing.outputs.available }}
+        run: |
+          if [ "$RELEASE_SIGNING_AVAILABLE" = "true" ]; then
+            ./gradlew --no-daemon --stacktrace :app:assembleProductionRelease
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+          else
+            ./gradlew --no-daemon --stacktrace :app:assembleProductionDebug
+            echo "variant=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare APK and checksum
+        env:
+          APK_VARIANT: ${{ steps.build.outputs.variant }}
         run: |
           mkdir -p app/build/distributions
-          cp app/build/outputs/apk/production/debug/app-production-debug.apk app/build/distributions/lucent.apk
+          cp "app/build/outputs/apk/production/$APK_VARIANT/app-production-$APK_VARIANT.apk" app/build/distributions/lucent.apk
           (cd app/build/distributions && sha256sum lucent.apk > lucent.apk.sha256)
 
+      - name: Verify persistent release signer
+        if: steps.signing.outputs.available == 'true'
+        env:
+          LUCENT_SIGNING_CERT_SHA256: ${{ secrets.LUCENT_SIGNING_CERT_SHA256 }}
+        run: |
+          sdk_root="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          apksigner="$(find "$sdk_root/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$apksigner" ]; then
+            echo "Android apksigner was not found." >&2
+            exit 1
+          fi
+          "$apksigner" verify --verbose --print-certs app/build/distributions/lucent.apk
+          actual="$("$apksigner" verify --print-certs app/build/distributions/lucent.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest/ { print $2; exit }' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$LUCENT_SIGNING_CERT_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then
+            echo "APK signing certificate does not match LUCENT_SIGNING_CERT_SHA256." >&2
+            exit 1
+          fi
+          echo "Stable APK signing certificate verified: $actual"
+
       - name: Upload LUCENT APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lucent-apk
           path: |
@@ -56,23 +114,36 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish-latest:
+    name: Publish stable latest APK
+    needs: build-lucent-apk
+    if: needs.build-lucent-apk.outputs.release_signed == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed APK artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: lucent-apk
+          path: distributions
+
       - name: Publish latest LUCENT APK release
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="build-${GITHUB_RUN_NUMBER}"
           release_title="LUCENT build #${GITHUB_RUN_NUMBER}"
-          release_notes="Automated LUCENT Android debug build.
+          release_notes="Automated LUCENT stable-signed Android APK.
 
           Commit: ${GITHUB_SHA}
           Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          This APK is intended for testing and is not a Play Store-signed release."
+          This build uses the repository's persistent LUCENT signing identity. Historical APKs created before stable signing used ephemeral debug certificates and cannot be upgraded in place to this signing identity; users moving from those builds may need a one-time reinstall."
 
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" app/build/distributions/lucent.apk app/build/distributions/lucent.apk.sha256 --clobber
+            gh release upload "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --clobber
             gh release edit "$tag" --title "$release_title" --notes "$release_notes" --latest
           else
-            gh release create "$tag" app/build/distributions/lucent.apk app/build/distributions/lucent.apk.sha256 --title "$release_title" --notes "$release_notes" --latest --target "$GITHUB_SHA"
+            gh release create "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --title "$release_title" --notes "$release_notes" --latest --target "$GITHUB_SHA"
           fi
