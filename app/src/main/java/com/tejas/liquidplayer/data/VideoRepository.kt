@@ -17,6 +17,7 @@ class VideoRepository(private val resolver: ContentResolver) {
             add(MediaStore.Video.Media.MIME_TYPE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 add(MediaStore.Video.Media.RELATIVE_PATH)
+                add(MediaStore.MediaColumns.VOLUME_NAME)
             } else {
                 @Suppress("DEPRECATION")
                 add(MediaStore.Video.Media.DATA)
@@ -42,6 +43,11 @@ class VideoRepository(private val resolver: ContentResolver) {
             } else {
                 cursor.getColumnIndex(MediaStore.Video.Media.DATA)
             }
+            val volumeIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                cursor.getColumnIndex(MediaStore.MediaColumns.VOLUME_NAME)
+            } else {
+                -1
+            }
             @Suppress("DEPRECATION")
             val externalStorageRoot = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                 Environment.getExternalStorageDirectory().absolutePath
@@ -57,15 +63,25 @@ class VideoRepository(private val resolver: ContentResolver) {
                 } else {
                     legacyRelativePath(storedPath, externalStorageRoot)
                 }
+                val volumeName = if (volumeIndex >= 0) cursor.getString(volumeIndex) else null
+                val collectionUri = if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    !volumeName.isNullOrBlank()
+                ) {
+                    MediaStore.Video.Media.getContentUri(volumeName)
+                } else {
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                }
                 results += VideoItem(
                     id = id,
-                    uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id),
+                    uri = ContentUris.withAppendedId(collectionUri, id),
                     name = cursor.getString(nameIndex).orEmpty(),
                     relativePath = relativePath,
                     durationMs = if (durationIndex >= 0) cursor.getLong(durationIndex) else 0L,
                     sizeBytes = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else 0L,
                     dateAddedSeconds = if (dateIndex >= 0) cursor.getLong(dateIndex) else 0L,
-                    mimeType = if (mimeIndex >= 0) cursor.getString(mimeIndex) else null
+                    mimeType = if (mimeIndex >= 0) cursor.getString(mimeIndex) else null,
+                    volumeName = volumeName
                 )
             }
         }
