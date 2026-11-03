@@ -1,6 +1,7 @@
 package com.tejas.liquidplayer.data
 
 import android.net.Uri
+import java.util.Locale
 
 data class VideoItem(
     val id: Long,
