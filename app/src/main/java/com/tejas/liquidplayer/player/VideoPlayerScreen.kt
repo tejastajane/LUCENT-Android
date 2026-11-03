@@ -966,7 +966,6 @@ fun VideoPlayerScreen(
                             if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             if (isPlaying) "Pause" else "Play",
                             modifier = Modifier.size(width = if (isLandscape) 80.dp else 58.dp, height = if (isLandscape) 52.dp else 48.dp),
-                            selected = true,
                             onClick = { controller.togglePlayPause() }
                         )
                         GlassIconButton(
