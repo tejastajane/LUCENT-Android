@@ -318,6 +318,7 @@ fun VideoPlayerScreen(
     var seekFeedbackAmountMs by remember { mutableLongStateOf(0L) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var swipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
+    var swipeSeekPreviewPoint by remember(video.uri) { mutableStateOf(Offset.Zero) }
     var showSwipeSeekHint by remember(video.uri) { mutableStateOf(false) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
@@ -388,7 +389,8 @@ fun VideoPlayerScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (
                 event == Lifecycle.Event.ON_STOP &&
-                activity?.isInPictureInPictureMode != true &&
+                !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+                    activity?.isInPictureInPictureMode == true) &&
                 runCatching { controller.player.isPlaying }.getOrDefault(false)
             ) {
                 controller.player.pause()
@@ -961,6 +963,7 @@ fun VideoPlayerScreen(
                                             surfaceWidthPx = size.width.toFloat()
                                         )
                                         swipeSeekPreview = HorizontalSeekPreview(seekStartMs, seekTargetMs)
+                                        swipeSeekPreviewPoint = change.position
                                         controlsInteractionToken++
                                     }
                                     2 -> {
@@ -1012,8 +1015,15 @@ fun VideoPlayerScreen(
         }
 
         swipeSeekPreview?.takeIf { !isInPictureInPictureMode }?.let { preview ->
+            val density = LocalDensity.current
+            val previewX = (
+                with(density) { swipeSeekPreviewPoint.x.toDp() } - 84.dp
+            ).coerceIn(12.dp, (screenWidth - 168.dp).coerceAtLeast(12.dp))
+            val previewY = (
+                with(density) { swipeSeekPreviewPoint.y.toDp() } - 88.dp
+            ).coerceIn(80.dp, (maxHeight - 180.dp).coerceAtLeast(80.dp))
             Column(
-                Modifier.align(Alignment.Center)
+                Modifier.offset(x = previewX, y = previewY)
                     .clip(RoundedCornerShape(22.dp))
                     .background(Color.Black.copy(alpha = 0.76f))
                     .padding(horizontal = 22.dp, vertical = 14.dp),
