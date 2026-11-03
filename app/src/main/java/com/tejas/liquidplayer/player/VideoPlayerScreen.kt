@@ -126,6 +126,19 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.focus.focusable
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
@@ -238,6 +251,7 @@ fun VideoPlayerScreen(
 
     var panel by remember { mutableStateOf(PlayerPanel.None) }
     var controlsVisible by remember { mutableStateOf(true) }
+    val shouldSampleBackdrop = rememberUpdatedState(controlsVisible || panel != PlayerPanel.None)
     var controlsLocked by remember(video.uri) { mutableStateOf(false) }
     var showUnlockButton by remember(video.uri) { mutableStateOf(false) }
     var manualRotation by remember(video.uri) { mutableStateOf(false) }
@@ -660,6 +674,10 @@ fun VideoPlayerScreen(
             var secondBuffer: Bitmap? = null
             var useFirstBuffer = true
             while (isActive) {
+                if (!shouldSampleBackdrop.value) {
+                    delay(500L)
+                    continue
+                }
                 val texture = videoTextureView
                 if (texture != null && texture.isAvailable && texture.width > 0 && texture.height > 0) {
                     val scale = minOf(1f, 640f / maxOf(texture.width, texture.height).toFloat())
@@ -679,10 +697,8 @@ fun VideoPlayerScreen(
                         useFirstBuffer = !useFirstBuffer
                     }
                 }
-                // Keep the same spatial sample quality while reducing backdrop staleness from
-                // five frames/second to twenty, using two buffers to avoid mutating the image
-                // currently displayed by Compose.
-                delay(50L)
+                // Refresh decorative glass at 10 Hz, only while controls/panels are visible.
+                delay(100L)
             }
         }
 
@@ -867,7 +883,7 @@ fun VideoPlayerScreen(
 
                 Spacer(Modifier.weight(1f))
 
-                Row(Modifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         formatDuration(positionMs),
                         modifier = Modifier.widthIn(min = 44.dp),
@@ -1182,7 +1198,7 @@ fun VideoPlayerScreen(
                                 },
                                 onInformation = { panel = PlayerPanel.Information }
                             )
-                            PlayerPanel.AspectRatio -> AspectRatioPanel { label, ratio ->
+                            PlayerPanel.AspectRatio -> AspectRatioPanel(selectedAspectIndex) { label, ratio ->
                                 selectedAspectIndex = aspectRatios.indexOfFirst { it.first == label }.coerceAtLeast(0)
                                 controller.setAspectRatio(ratio)
                                 showAspectRatioFeedback = true
@@ -1331,7 +1347,10 @@ private fun ToolsPanel(
 }
 
 @Composable
-private fun AspectRatioPanel(onSelect: (String, String?) -> Unit) {
+private fun AspectRatioPanel(
+    selectedIndex: Int,
+    onSelect: (String, String?) -> Unit
+) {
     val ratios = listOf(
         "Original" to null,
         "16:9" to "16:9",
@@ -1341,14 +1360,23 @@ private fun AspectRatioPanel(onSelect: (String, String?) -> Unit) {
         "2.35:1" to "2.35:1"
     )
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        ratios.forEach { (label, ratio) ->
+        ratios.forEachIndexed { index, (label, ratio) ->
+            val isSelected = index == selectedIndex
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onSelect(label, ratio) }.padding(horizontal = 10.dp, vertical = 13.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onSelect(label, ratio) }
+                    .semantics { selected = isSelected }
+                    .padding(horizontal = 10.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Default.AspectRatio, null, tint = Color.LightGray, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(12.dp))
                 Text(label, Modifier.weight(1f))
+                if (isSelected) {
+                    Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.White)
+                }
             }
         }
         Text("Ratios are applied by libVLC. Original restores the source aspect ratio.", color = Color.Gray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
@@ -1507,6 +1535,7 @@ private fun LiquidSeekBar(
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
     val latestProgress = rememberUpdatedState(progress)
+    val latestPosition = rememberUpdatedState(positionMs)
     val latestDuration = rememberUpdatedState(durationMs)
     val latestOnSeek = rememberUpdatedState(onSeek)
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -1514,7 +1543,43 @@ private fun LiquidSeekBar(
     val animationScope = rememberCoroutineScope()
 
     BoxWithConstraints(
-        modifier.fillMaxWidth().height(36.dp),
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Playback position"
+                stateDescription = "${formatDuration(latestPosition.value)} of ${formatDuration(latestDuration.value)}"
+                progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
+                setProgress { target ->
+                    val total = latestDuration.value
+                    if (total <= 0L) {
+                        false
+                    } else {
+                        latestOnSeek.value(
+                            (target.coerceIn(0f, 1f) * total.toFloat()).toLong()
+                        )
+                        true
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || latestDuration.value <= 0L) {
+                    false
+                } else {
+                    val nextPosition = when (event.key) {
+                        Key.DirectionLeft -> latestPosition.value - 10_000L
+                        Key.DirectionRight -> latestPosition.value + 10_000L
+                        else -> null
+                    }
+                    if (nextPosition == null) {
+                        false
+                    } else {
+                        latestOnSeek.value(nextPosition.coerceIn(0L, latestDuration.value))
+                        true
+                    }
+                }
+            },
         contentAlignment = Alignment.CenterStart
     ) {
         val trackWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
