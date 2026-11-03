@@ -35,8 +35,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,7 +75,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -114,6 +115,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -136,7 +138,9 @@ fun MainLibraryUi(
     onTabSelected: (Int) -> Unit,
     videos: List<VideoItem>,
     hasVideoPermission: Boolean,
+    hasMediaManagementAccess: Boolean,
     onRequestMediaPermission: () -> Unit,
+    onRequestMediaManagementAccess: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onRenameVideo: (VideoItem, String) -> Unit,
     onDeleteVideo: (VideoItem) -> Unit,
@@ -193,7 +197,9 @@ fun MainLibraryUi(
                             isDarkTheme = isDarkTheme,
                             onThemeChanged = onThemeChanged,
                             onRescan = onRescan,
-                            onChooseVideoFile = onChooseVideoFile
+                            onChooseVideoFile = onChooseVideoFile,
+                            hasMediaManagementAccess = hasMediaManagementAccess,
+                            onManageMediaAccess = onRequestMediaManagementAccess
                         )
                     }
                 }
@@ -241,7 +247,7 @@ private fun SearchResultsScreen(
         Text("Search results", Modifier.padding(start = 22.dp, end = 18.dp, top = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
         else if (filtered.isEmpty()) EmptyState(backdrop, "No matches", "Try another title or folder name.", "No results", {})
-        else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 150.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRename = onRenameVideo, onDelete = onDeleteVideo) }
         }
     }
@@ -334,7 +340,7 @@ private fun VideosScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRename = onRenameVideo, onDelete = onDeleteVideo) }
@@ -361,7 +367,7 @@ private fun FoldersScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    contentPadding = PaddingValues(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 176.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(folders, key = { it.first }) { (name, folderVideos) ->
@@ -395,7 +401,9 @@ private fun SettingsScreen(
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
     onRescan: () -> Unit,
-    onChooseVideoFile: () -> Unit
+    onChooseVideoFile: () -> Unit,
+    hasMediaManagementAccess: Boolean,
+    onManageMediaAccess: () -> Unit
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -511,6 +519,25 @@ private fun SettingsScreen(
                         )
                     )
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    item {
+                        SettingsActionSection(
+                            "Media management",
+                            listOf(
+                                ActionItem(
+                                    Icons.Default.Delete,
+                                    "Direct media deletion",
+                                    if (hasMediaManagementAccess) {
+                                        "Enabled — Android won't ask for every file"
+                                    } else {
+                                        "Allow once to avoid repeated delete confirmations"
+                                    },
+                                    onManageMediaAccess
+                                )
+                            )
+                        )
+                    }
+                }
                 item {
                     SettingsActionSection(
                         "About & support",
@@ -560,18 +587,14 @@ private fun SettingsScreen(
                     "The project page could not be opened automatically. Visit: " +
                     "https://github.com/tejastajane/LiquidPlayer-Android"
             }
-            AlertDialog(
+            GlassDialog(
+                backdrop = toggleBackdrop,
+                title = title,
                 onDismissRequest = { infoDialog = null },
-                title = { Text(title) },
-                text = { Text(message) },
-                confirmButton = {
-                    TextButton(onClick = { infoDialog = null }) {
-                        Text("Done")
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.surface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                content = { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                actions = {
+                    TextButton(onClick = { infoDialog = null }) { Text("Done") }
+                }
             )
         }
     }
@@ -684,7 +707,6 @@ private fun VideoRow(
     var showActionsSheet by remember(item.id) { mutableStateOf(false) }
     var showInfoDialog by remember(item.id) { mutableStateOf(false) }
     var showRenameDialog by remember(item.id) { mutableStateOf(false) }
-    var showDeleteDialog by remember(item.id) { mutableStateOf(false) }
     var renameValue by remember(item.id, item.name) { mutableStateOf(item.name) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -753,7 +775,7 @@ private fun VideoRow(
                     }
                     VideoActionItem(Icons.Default.Delete, "Delete") {
                         showActionsSheet = false
-                        showDeleteDialog = true
+                        onDelete(item)
                     }
                 }
             }
@@ -763,6 +785,7 @@ private fun VideoRow(
 
     if (showInfoDialog) {
         val details = buildString {
+            appendLine("File name: " + item.name)
             appendLine("Folder: " + item.folderName)
             appendLine("Location: " + item.relativePath)
             if (item.sizeBytes > 0L) appendLine("Size: " + Formatter.formatFileSize(context, item.sizeBytes))
@@ -770,27 +793,33 @@ private fun VideoRow(
             item.mimeType?.let { appendLine("Format: " + it.substringAfter('/').uppercase(Locale.ROOT)) }
             if (item.dateAddedSeconds > 0L) append("Added: " + DateFormat.getDateTimeInstance().format(Date(item.dateAddedSeconds * 1_000L)))
         }
-        AlertDialog(
+        GlassDialog(
+            backdrop = backdrop,
+            title = "Information",
             onDismissRequest = { showInfoDialog = false },
-            title = { Text("Information") },
-            text = { Text(details, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Done") } }
+            content = { Text(details, style = MaterialTheme.typography.bodyMedium) },
+            actions = {
+                TextButton(onClick = { showInfoDialog = false }) { Text("Done") }
+            }
         )
     }
 
     if (showRenameDialog) {
-        AlertDialog(
+        GlassDialog(
+            backdrop = backdrop,
+            title = "Rename video",
             onDismissRequest = { showRenameDialog = false },
-            title = { Text("Rename video") },
-            text = {
+            content = {
                 OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
                     value = renameValue,
                     onValueChange = { renameValue = it },
                     singleLine = true,
                     label = { Text("File name") }
                 )
             },
-            confirmButton = {
+            actions = {
+                TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
                 TextButton(
                     onClick = {
                         val requestedName = renameValue.trim()
@@ -805,24 +834,47 @@ private fun VideoRow(
                     },
                     enabled = renameValue.isNotBlank()
                 ) { Text("Save") }
-            },
-            dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } }
+            }
         )
     }
 
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete video?") },
-            text = { Text("Delete \"" + item.name + "\" from your device? This action cannot be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDelete(item)
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
-        )
+}
+
+
+@Composable
+private fun GlassDialog(
+    backdrop: Backdrop,
+    title: String,
+    onDismissRequest: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+    actions: @Composable RowScope.() -> Unit
+) {
+    Dialog(onDismissRequest = onDismissRequest) {
+        GlassSurface(
+            backdrop = backdrop,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+            cornerRadius = 30.dp,
+            surfaceAlpha = 0.055f,
+            navMaterial = true
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                content()
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = actions
+                )
+            }
+        }
     }
 }
 
