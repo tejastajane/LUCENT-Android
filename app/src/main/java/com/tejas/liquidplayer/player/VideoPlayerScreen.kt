@@ -276,6 +276,7 @@ fun VideoPlayerScreen(
     var manualRotation by remember(video.uri) { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var playbackError by remember(video.uri) { mutableStateOf<String?>(null) }
+    var needsAudioFocusRetry by remember(video.uri) { mutableStateOf(false) }
     var cacheRetryProgress by remember(video.uri) { mutableStateOf<Pair<Long, Long?>?>(null) }
     var cacheRetryJob by remember(video.uri) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var positionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
@@ -367,6 +368,22 @@ fun VideoPlayerScreen(
             .apply()
     }
 
+    fun startPreparedPlayback() {
+        if (!audioFocus.request()) {
+            needsAudioFocusRetry = true
+            playbackError = "Audio focus is unavailable. Press Play when the other audio interruption has ended."
+            return
+        }
+        val error = controller.start()
+        if (error != null) {
+            audioFocus.abandon()
+            playbackError = error
+        } else {
+            needsAudioFocusRetry = false
+            playbackError = null
+        }
+    }
+
     fun togglePlayback() {
         val playingNow = runCatching { controller.player.isPlaying }.getOrDefault(false)
         if (playingNow) {
@@ -374,14 +391,8 @@ fun VideoPlayerScreen(
             persistProgress()
             isPlaying = false
             audioFocus.abandon()
-        } else if (audioFocus.request()) {
-            controller.player.play()
         } else {
-            Toast.makeText(
-                context,
-                "LUCENT couldn't get audio focus. Another app or a phone call may be using audio.",
-                Toast.LENGTH_LONG
-            ).show()
+            startPreparedPlayback()
         }
     }
 
@@ -567,23 +578,38 @@ fun VideoPlayerScreen(
 
     LaunchedEffect(video.uri, controller, attachedController) {
         if (attachedController !== controller) return@LaunchedEffect
-        if (!audioFocus.request()) {
-            playbackError = "Audio focus is unavailable. Press Play when the other audio interruption has ended."
-            return@LaunchedEffect
-        }
         resumePositionApplied = savedPositionMs < 1_500L
-        val immediateError = controller.play(video.uri)
+        val prepareError = controller.prepare(video.uri)
+        val immediateError = when {
+            prepareError != null -> prepareError
+            !audioFocus.request() -> {
+                needsAudioFocusRetry = true
+                playbackError = "Audio focus is unavailable. Press Play when the other audio interruption has ended."
+                null
+            }
+            else -> controller.start()
+        }
         if (immediateError != null) {
             audioFocus.abandon()
             if (video.uri.scheme == "content" && cacheRetryAttempted.compareAndSet(false, true)) {
-                if (audioFocus.request()) startCacheRetry() else playbackError = immediateError
+                if (audioFocus.request()) {
+                    needsAudioFocusRetry = false
+                    startCacheRetry()
+                } else {
+                    playbackError = immediateError
+                }
             } else {
                 playbackError = immediateError
             }
+        } else if (!needsAudioFocusRetry) {
+            playbackError = null
         }
         // Restore this video's selected streams after libVLC has opened its tracks.
         // Track IDs are preferred; track labels provide a fallback if libVLC reorders IDs.
         launch {
+            // When initial audio focus is denied, keep waiting for the user's later Play
+            // action rather than abandoning saved audio/subtitle restoration after a timeout.
+            while (isActive && needsAudioFocusRetry) delay(250L)
             var audioRestored = savedAudioTrackId == Int.MIN_VALUE
             var subtitleRestored =
                 savedSubtitleTrackId == Int.MIN_VALUE && savedExternalSubtitleUri == null
@@ -837,6 +863,14 @@ fun VideoPlayerScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(message, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                if (needsAudioFocusRetry) {
+                    TextButton(
+                        onClick = { startPreparedPlayback() },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    ) {
+                        Text("Play")
+                    }
+                }
                 cacheRetryProgress?.let { (copiedBytes, expectedBytes) ->
                     val progressText = expectedBytes?.let {
                         "${Formatter.formatFileSize(context, copiedBytes)} / ${Formatter.formatFileSize(context, it)}"

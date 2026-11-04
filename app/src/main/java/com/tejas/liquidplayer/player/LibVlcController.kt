@@ -51,8 +51,11 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         }
     }
 
-    /** Returns null if playback was queued, or an error message for synchronous access failures. */
-    fun play(uri: Uri): String? {
+    /**
+     * Resolve and attach a media source without starting playback. This lets the UI prepare
+     * the video even when another app temporarily owns audio focus.
+     */
+    fun prepare(uri: Uri): String? {
         if (released) return "The player has already been closed."
         return try {
             runCatching { player.stop() }
@@ -72,15 +75,34 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
                 "file" -> Media(libVlc, uri.path ?: error("The video file path is empty."))
                 else -> Media(libVlc, uri)
             }
-            player.play(media)
+            try {
+                player.setMedia(media)
+            } finally {
+                media.release()
+            }
             null
         } catch (error: Exception) {
             runCatching { contentDescriptor?.close() }
             contentDescriptor = null
-            Log.e("LiquidPlayer/VLC", "Unable to start media: $uri", error)
+            Log.e("LiquidPlayer/VLC", "Unable to prepare media: $uri", error)
             "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
         }
     }
+
+    /** Start the media source previously attached by [prepare]. */
+    fun start(): String? {
+        if (released) return "The player has already been closed."
+        return try {
+            player.play()
+            null
+        } catch (error: Exception) {
+            Log.e("LiquidPlayer/VLC", "Unable to start prepared media", error)
+            "Couldn't start this video: ${error.message ?: "libVLC could not start playback."}"
+        }
+    }
+
+    /** Convenience path for callers that want to prepare and immediately start. */
+    fun play(uri: Uri): String? = prepare(uri) ?: start()
 
     /**
      * Retry a content-provider video from a seekable local cache file. Some Android document
