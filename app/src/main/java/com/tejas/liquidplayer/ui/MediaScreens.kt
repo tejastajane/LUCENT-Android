@@ -976,7 +976,7 @@ private fun VideoRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             Text(listOf(if (item.sizeBytes > 0L) Formatter.formatFileSize(context, item.sizeBytes) else "Local video", if (item.durationMs > 0L) formatDuration(item.durationMs) else null, item.mimeType?.substringAfter('/')?.uppercase(Locale.ROOT)).filterNotNull().joinToString("  ·  "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(item.folderName, color = Color(0xFFAAAAAA), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.folderName, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(2.dp))
         IconButton(onClick = { onRequestActions(item) }) {

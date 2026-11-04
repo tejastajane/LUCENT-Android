@@ -3,6 +3,8 @@ package com.tejas.liquidplayer.player
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.Build
+import com.tejas.liquidplayer.R
 import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -89,7 +91,11 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
             runCatching { contentDescriptor?.close() }
             contentDescriptor = null
             Log.e("LiquidPlayer/VLC", "Unable to prepare media: $uri", error)
-            "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && uri.scheme.equals("file", ignoreCase = true)) {
+                appContext.getString(R.string.player_legacy_file_uri_error)
+            } else {
+                "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
+            }
         }
     }
 
