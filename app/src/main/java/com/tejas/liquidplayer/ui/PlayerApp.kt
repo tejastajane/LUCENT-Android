@@ -109,7 +109,7 @@ fun LiquidPlayerApp(
         if (result.resultCode == Activity.RESULT_OK && mutation != null) {
             // MediaStore.createDeleteRequest performs the deletion itself after approval.
             // Do not issue a second ContentResolver.delete for the same item.
-            if (mutation is PendingMediaMutation.Delete && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (mutation is PendingMediaMutation.Delete && Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
                 Toast.makeText(context, "Video deleted.", Toast.LENGTH_SHORT).show()
                 mediaRefreshToken++
             } else {
@@ -215,21 +215,20 @@ fun LiquidPlayerApp(
                     requestMediaManagementAccess()
                     return
                 }
-                Build.VERSION.SDK_INT in Build.VERSION_CODES.Q..Build.VERSION_CODES.R -> {
-                    // Try a direct delete for media LUCENT is already allowed to manage.
-                    // If Android requires per-file consent, stop here rather than opening
-                    // Android's delete approval UI; MANAGE_MEDIA is unavailable on API 29–30.
+                Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ||
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                    // Android 10 supports recoverable per-file approval. Android 12+
+                    // reaches this direct path only after MANAGE_MEDIA has been granted.
                     when (val outcome = executeMediaMutation(context, mutation)) {
                         is MediaMutationOutcome.Success -> {
                             Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
                             mediaRefreshToken++
                         }
                         is MediaMutationOutcome.NeedsApproval -> {
-                            Toast.makeText(
-                                context,
-                                "This Android version requires its own approval to delete this video. LUCENT-only deletion is available on Android 12 and newer.",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            pendingMediaMutation = mutation
+                            mediaMutationLauncher.launch(
+                                IntentSenderRequest.Builder(outcome.intentSender).build()
+                            )
                         }
                         is MediaMutationOutcome.Failure -> {
                             Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
