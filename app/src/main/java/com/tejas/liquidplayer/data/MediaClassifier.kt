@@ -37,28 +37,28 @@ internal object MediaClassifier {
     )
 
     private val seasonEpisodePattern = Regex(
-        """(?i)\\bS(\\d{1,2})[ ._-]*E(\\d{1,3})\\b"""
+        """(?i)\bS(\d{1,2})[ ._-]*E(\d{1,3})\b"""
     )
     private val seasonXEpisodePattern = Regex(
-        """(?i)(?<!\\d)(\\d{1,2})\\s*[xX]\\s*(\\d{1,3})(?!\\d)"""
+        """(?i)(?<!\d)(\d{1,2})\s*[xX]\s*(\d{1,3})(?!\d)"""
     )
     private val seasonWordEpisodePattern = Regex(
-        """(?i)\\bseason\\s*(\\d{1,2})\\s*episode\\s*(\\d{1,3})\\b"""
+        """(?i)\bseason\s*(\d{1,2})\s*episode\s*(\d{1,3})\b"""
     )
     private val episodeWordPattern = Regex(
-        """(?i)\\b(?:episode|ep)\\s*[._ #:-]*(\\d{1,3})\\b"""
+        """(?i)\b(?:episode|ep)\s*[._ #:-]*(\d{1,3})\b"""
     )
     private val compactEpisodePattern = Regex(
-        """(?i)\\b(\\d{1,2})e(\\d{1,3})\\b"""
+        """(?i)\b(\d{1,2})e(\d{1,3})\b"""
     )
     private val annotationsPattern = Regex(
-        """\\[[^\\]]*\\]|\\([^)]*\\)|\\{[^}]*\\}"""
+        """\[[^\]]*\]|\([^)]*\)|\{[^}]*\}"""
     )
     private val resolutionPattern = Regex(
-        """(?i)\\b\\d{3,4}p\\b"""
+        """(?i)\b\d{3,4}p\b"""
     )
     private val numericSuffixPattern = Regex(
-        """(?:^|[ ._-])(\\d{1,4})(?:v\\d+)?$"""
+        """(?:^|[ ._-])(\d{1,4})(?:v\d+)?$"""
     )
     private val separatorsPattern = Regex("[._-]+")
     private val whitespacePattern = Regex("\\s+")
