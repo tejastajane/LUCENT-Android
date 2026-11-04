@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.VideoRepository
 import com.tejas.liquidplayer.data.mediaPreferenceId
+import com.tejas.liquidplayer.data.PlaybackPrefs
 import com.tejas.liquidplayer.data.isResumablePlaybackPosition
 import com.tejas.liquidplayer.data.sortVideosAscending
 import com.tejas.liquidplayer.player.VideoPlayerScreen
@@ -383,7 +384,14 @@ fun LiquidPlayerApp(
                 hasMediaScanError = false
             } else {
                 try {
-                    videos = withContext(Dispatchers.IO) { repository.loadVideos() }
+                    videos = withContext(Dispatchers.IO) {
+                        repository.loadVideos().also { scanned ->
+                            PlaybackPrefs.migrateLegacyPreferences(
+                                playerPreferences,
+                                scanned.map { it.uri.toString() }
+                            )
+                        }
+                    }
                     hasMediaScanError = false
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -422,10 +430,9 @@ fun LiquidPlayerApp(
         // Resume only when the previous item has a meaningful, unfinished position.
         // Otherwise the pill must play the newest available library video.
         val resumableVideo = lastPlayedVideo?.takeIf { item ->
-            val uriString = item.uri.toString()
-            val savedPosition = playerPreferences.getLong(
-                "playback_position_${mediaPreferenceId(uriString)}",
-                playerPreferences.getLong("playback_position_${uriString.hashCode()}", 0L)
+            val savedPosition = PlaybackPrefs.readPlaybackPosition(
+                playerPreferences,
+                item.uri.toString()
             )
             isResumablePlaybackPosition(savedPosition, item.durationMs)
         }

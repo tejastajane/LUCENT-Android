@@ -168,6 +168,7 @@ import com.tejas.liquidplayer.data.TrackOption
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.data.mediaPreferenceId
+import com.tejas.liquidplayer.data.PlaybackPrefs
 import com.tejas.liquidplayer.ui.GlassIconButton
 import com.tejas.liquidplayer.ui.KyantGlassSurface
 import com.tejas.liquidplayer.ui.GlassSurface
@@ -206,8 +207,8 @@ fun VideoPlayerScreen(
     val lastBrightnessKey = "last_player_brightness"
     val preferenceSuffix = remember(video.uri) { mediaPreferenceId(video.uri.toString()) }
     val legacyPreferenceSuffix = remember(video.uri) { video.uri.toString().hashCode().toString() }
-    val progressKey = remember(preferenceSuffix) { "playback_position_$preferenceSuffix" }
-    val legacyProgressKey = remember(legacyPreferenceSuffix) { "playback_position_$legacyPreferenceSuffix" }
+    val progressKey = remember(video.uri) { PlaybackPrefs.playbackPositionKey(video.uri.toString()) }
+    val legacyProgressKey = remember(video.uri) { PlaybackPrefs.legacyPlaybackPositionKey(video.uri.toString()) }
     val favouriteKey = remember(preferenceSuffix) { "favourite_$preferenceSuffix" }
     val legacyFavouriteKey = remember(legacyPreferenceSuffix) { "favourite_$legacyPreferenceSuffix" }
     val audioTrackIdKey = remember(preferenceSuffix) { "audio_track_id_$preferenceSuffix" }
@@ -290,7 +291,6 @@ fun VideoPlayerScreen(
         positionMs = storedPosition
         playerPreferences.edit()
             .putLong(progressKey, storedPosition)
-            .remove(legacyProgressKey)
             .apply()
         isPlaying = false
         Toast.makeText(
@@ -342,7 +342,7 @@ fun VideoPlayerScreen(
             val current = runCatching { controller.player.time }.getOrDefault(positionMs).coerceAtLeast(0L)
             val length = runCatching { controller.player.length }.getOrDefault(durationMs)
             val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
-            playerPreferences.edit().putLong(progressKey, storedPosition).remove(legacyProgressKey).apply()
+            playerPreferences.edit().putLong(progressKey, storedPosition).apply()
         }
     }
     val latestPersistProgress = rememberUpdatedState(persistProgress)
@@ -665,7 +665,7 @@ fun VideoPlayerScreen(
             val now = SystemClock.elapsedRealtime()
             if (now - lastSavedAt >= 1_000L) {
                 val storedPosition = if (mediaLength > 0L && currentTime >= mediaLength - 2_500L) 0L else currentTime
-                playerPreferences.edit().putLong(progressKey, storedPosition).remove(legacyProgressKey).apply()
+                playerPreferences.edit().putLong(progressKey, storedPosition).apply()
                 lastSavedAt = now
             }
             delay(350L)
@@ -1034,7 +1034,6 @@ fun VideoPlayerScreen(
                     }
                 }
         )
-
 
         if (seekFeedbackDirection != 0 && !isInPictureInPictureMode) {
             SeekGestureIndicator(
@@ -1788,8 +1787,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is android.content.ContextWrapper -> baseContext.findActivity()
     else -> null
 }
-
-
 
 @Composable
 private fun PlainBackButton(onClick: () -> Unit) {

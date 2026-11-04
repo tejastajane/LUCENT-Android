@@ -128,6 +128,7 @@ import com.tejas.liquidplayer.ui.liquid.LiquidBottomTabs
 import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
+import com.tejas.liquidplayer.data.PlaybackPrefs
 import com.tejas.liquidplayer.data.sortVideosAscending
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -948,7 +949,7 @@ private fun VideoRow(
     }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
     val progress = remember(item.uri, item.durationMs, preferences) {
-        val saved = preferences.getLong("playback_position_" + item.uri.toString().hashCode(), 0L)
+        val saved = PlaybackPrefs.readPlaybackPosition(preferences, item.uri.toString())
         if (item.durationMs > 0L) (saved.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     }
 
