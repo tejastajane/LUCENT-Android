@@ -970,6 +970,12 @@ fun VideoPlayerScreen(
                             if (volume != finalVolume) volume = finalVolume
                         }
 
+                        fun persistBrightnessAfterDrag() {
+                            if (verticalGestureZone == -1) {
+                                playerPreferences.edit().putFloat(lastBrightnessKey, brightness).apply()
+                            }
+                        }
+
                         detectDragGestures(
                             onDragStart = { start ->
                                 dragAxis = 0
@@ -993,12 +999,18 @@ fun VideoPlayerScreen(
                                         }
                                         swipeSeekPreview = null
                                     }
-                                    2 -> syncVolumeAfterDrag()
+                                    2 -> {
+                                        syncVolumeAfterDrag()
+                                        persistBrightnessAfterDrag()
+                                    }
                                 }
                             },
                             onDragCancel = {
                                 swipeSeekPreview = null
-                                if (dragAxis == 2) syncVolumeAfterDrag()
+                                if (dragAxis == 2) {
+                                    syncVolumeAfterDrag()
+                                    persistBrightnessAfterDrag()
+                                }
                             },
                             onDrag = { change, dragAmount ->
                                 accumulatedDragDistance += dragAmount
@@ -1058,7 +1070,6 @@ fun VideoPlayerScreen(
                                                 brightness = (
                                                     brightness - dragAmount.y / size.height * 1.75f
                                                 ).coerceIn(0f, 1f)
-                                                playerPreferences.edit().putFloat(lastBrightnessKey, brightness).apply()
                                                 activity?.window?.let { window ->
                                                     val params = window.attributes
                                                     params.screenBrightness = brightness
@@ -1953,7 +1964,6 @@ private fun LiquidSeekBar(
         val trackWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val usableWidthPx = (trackWidthPx - thumbWidthPx).coerceAtLeast(1f)
         val thumbTravelPx = usableWidthPx
-        var dragStartPositionMs by remember(durationMs) { mutableLongStateOf(positionMs) }
 
         val dampedDragAnimation = remember(animationScope) {
             DampedDragAnimation(
@@ -2007,7 +2017,6 @@ private fun LiquidSeekBar(
                         detectDragGestures(
                             onDragStart = { point ->
                                 val target = fractionAt(point.x)
-                                dragStartPositionMs = latestPosition.value
                                 dampedDragAnimation.press()
                                 dampedDragAnimation.updateValue(target)
                                 latestOnSeekStart.value()
