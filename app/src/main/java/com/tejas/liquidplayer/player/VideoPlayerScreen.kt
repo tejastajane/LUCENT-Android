@@ -301,7 +301,26 @@ fun VideoPlayerScreen(
         ).show()
     }
     val audioFocus = remember(context, controller) {
-        PlaybackAudioFocus(context) { latestAudioFocusLoss.value() }
+        PlaybackAudioFocus(
+            context = context,
+            wasPlaying = { runCatching { controller.player.isPlaying }.getOrDefault(isPlaying) },
+            onTransientLoss = {
+                controller.player.pause()
+                val current = runCatching { controller.player.time }.getOrDefault(positionMs).coerceAtLeast(0L)
+                val length = runCatching { controller.player.length }.getOrDefault(durationMs)
+                val storedPosition = if (length > 0L && current >= length - 2_500L) 0L else current
+                positionMs = storedPosition
+                playerPreferences.edit().putLong(progressKey, storedPosition).apply()
+                isPlaying = false
+            },
+            onResumeAfterGain = {
+                controller.player.play()
+                isPlaying = true
+            },
+            onDuck = { runCatching { controller.player.volume = 30 } },
+            onRestoreVolume = { runCatching { controller.player.volume = 100 } },
+            onFocusLost = { latestAudioFocusLoss.value() }
+        )
     }
     var showRemainingTime by remember(video.uri) { mutableStateOf(false) }
     var audioTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
