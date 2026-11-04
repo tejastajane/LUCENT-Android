@@ -44,6 +44,6 @@ class PlaybackPrefsTest {
 
     @Test fun migrationDoesNotInventValuesForUnseenUris() {
         val uri = "content://media/external/video/media/100"
-        assertTrue(PlaybackPrefs.migrationEntries(emptyMap(), listOf(uri)).isEmpty())
+        assertTrue(PlaybackPrefs.migrationEntries(emptyMap<String, Any>(), listOf(uri)).isEmpty())
     }
 }
