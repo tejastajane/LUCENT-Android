@@ -50,13 +50,24 @@ jobs:
           LUCENT_KEY_ALIAS: ${{ secrets.LUCENT_KEY_ALIAS }}
           LUCENT_KEY_PASSWORD: ${{ secrets.LUCENT_KEY_PASSWORD }}
           LUCENT_SIGNING_CERT_SHA256: ${{ secrets.LUCENT_SIGNING_CERT_SHA256 }}
+          PUBLISH_MAIN_RELEASE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         run: |
-          if [ -n "$LUCENT_KEYSTORE_BASE64" ] && \
-             [ -n "$LUCENT_KEYSTORE_PASSWORD" ] && \
-             [ -n "$LUCENT_KEY_ALIAS" ] && \
-             [ -n "$LUCENT_KEY_PASSWORD" ] && \
-             [ -n "$LUCENT_SIGNING_CERT_SHA256" ]; then
-            keystore="$RUNNER_TEMP/lucent-release.jks"
+          if [ "$PUBLISH_MAIN_RELEASE" = "true" ]; then
+            missing=()
+            [ -n "$LUCENT_KEYSTORE_BASE64" ] || missing+=("LUCENT_KEYSTORE_BASE64")
+            [ -n "$LUCENT_KEYSTORE_PASSWORD" ] || missing+=("LUCENT_KEYSTORE_PASSWORD")
+            [ -n "$LUCENT_KEY_ALIAS" ] || missing+=("LUCENT_KEY_ALIAS")
+            [ -n "$LUCENT_KEY_PASSWORD" ] || missing+=("LUCENT_KEY_PASSWORD")
+            [ -n "$LUCENT_SIGNING_CERT_SHA256" ] || missing+=("LUCENT_SIGNING_CERT_SHA256")
+
+            if [ "${#missing[@]}" -gt 0 ]; then
+              echo "::error::Main-branch publishing requires the persistent signing secrets."
+              printf 'Missing: %s\n' "${missing[*]}"
+              echo "Add all five LUCENT signing secrets in Settings > Secrets and variables > Actions."
+              exit 1
+            fi
+
+            keystore="$RUNNER_TEMP/lucent-release.p12"
             printf '%s' "$LUCENT_KEYSTORE_BASE64" | base64 --decode > "$keystore"
             chmod 600 "$keystore"
             echo "LUCENT_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
@@ -64,10 +75,10 @@ jobs:
             echo "LUCENT_KEY_ALIAS=$LUCENT_KEY_ALIAS" >> "$GITHUB_ENV"
             echo "LUCENT_KEY_PASSWORD=$LUCENT_KEY_PASSWORD" >> "$GITHUB_ENV"
             echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "Persistent release signing material found."
+            echo "Persistent release signing material loaded."
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Stable release signing secrets are not configured. This run will produce a debug/testing APK and will not publish a release."
+            echo "Non-main or pull-request build: producing a debug/testing APK only."
           fi
 
       - name: Build signed release APK or branch testing APK
@@ -141,12 +152,12 @@ jobs:
         run: |
           tag="build-${GITHUB_RUN_NUMBER}"
           release_title="LUCENT build #${GITHUB_RUN_NUMBER}"
-          release_notes="Automated LUCENT stable-signed Android APK.
+          release_notes="Automatically published LUCENT Android APK, signed with the persistent LUCENT release key.
 
           Commit: ${GITHUB_SHA}
           Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          This build uses the repository's persistent LUCENT signing identity. Historical APKs created before stable signing used ephemeral debug certificates and cannot be upgraded in place to this signing identity; users moving from those builds may need a one-time reinstall."
+          This APK uses the persistent LUCENT signing identity. Future releases signed with this same key can update it in place."
 
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --clobber
