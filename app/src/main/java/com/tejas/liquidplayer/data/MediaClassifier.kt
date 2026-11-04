@@ -2,7 +2,7 @@ package com.tejas.liquidplayer.data
 
 import java.util.Locale
 
-internal enum class MediaCategory(val storageValue: String) {
+enum class MediaCategory(val storageValue: String) {
     Movie("movie"),
     TvShow("tv_show"),
     Anime("anime"),
