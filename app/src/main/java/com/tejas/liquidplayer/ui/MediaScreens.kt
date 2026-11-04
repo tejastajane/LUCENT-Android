@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
@@ -130,6 +131,9 @@ import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.data.PlaybackPrefs
+import com.tejas.liquidplayer.data.MediaClassifier
+import com.tejas.liquidplayer.data.MediaClassifierInput
+import com.tejas.liquidplayer.data.MediaCategory
 import com.tejas.liquidplayer.R
 import com.tejas.liquidplayer.data.RenameNameError
 import com.tejas.liquidplayer.data.buildRenameFileName
@@ -151,6 +155,7 @@ private sealed interface LibraryOverlayState {
     ) : LibraryOverlayState
     data class RenameVideo(val item: VideoItem) : LibraryOverlayState
     data class VideoActions(val item: VideoItem) : LibraryOverlayState
+    data class CategoryOverride(val item: VideoItem) : LibraryOverlayState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -162,6 +167,8 @@ fun MainLibraryUi(
     hasVideoPermission: Boolean,
     hasMediaScanError: Boolean,
     favouriteUris: Set<String>,
+    categoryOverrides: Map<String, MediaCategory>,
+    onSetCategoryOverride: (VideoItem, MediaCategory?) -> Unit,
     hasMediaManagementAccess: Boolean,
     showMediaManagementOnboarding: Boolean,
     onMediaManagementOnboardingHandled: () -> Unit,
@@ -189,6 +196,24 @@ fun MainLibraryUi(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var activeOverlay by remember { mutableStateOf<LibraryOverlayState?>(null) }
     val context = LocalContext.current
+    val automaticCategories = remember(videos) {
+        MediaClassifier.classify(
+            videos.map { item ->
+                MediaClassifierInput(
+                    uri = item.uri.toString(),
+                    name = item.name,
+                    folderIdentity = item.folderIdentity,
+                    durationMs = item.durationMs
+                )
+            }
+        )
+    }
+    val effectiveCategories = remember(videos, categoryOverrides, automaticCategories) {
+        videos.associate { item ->
+            val uri = item.uri.toString()
+            uri to (categoryOverrides[uri] ?: automaticCategories[uri] ?: MediaCategory.Other)
+        }
+    }
     val showMessage: (String, String) -> Unit = { title, message ->
         activeOverlay = LibraryOverlayState.Message(
             title = title, message = message, confirmLabel = "Done",
@@ -219,7 +244,7 @@ fun MainLibraryUi(
     BackHandler(enabled = selectedTab != 0 || selectedFolder != null || searchExpanded || activeOverlay != null) {
         when (val overlay = activeOverlay) {
             is LibraryOverlayState.Message -> overlay.onCancel()
-            is LibraryOverlayState.RenameVideo, is LibraryOverlayState.VideoActions -> activeOverlay = null
+            is LibraryOverlayState.RenameVideo, is LibraryOverlayState.VideoActions, is LibraryOverlayState.CategoryOverride -> activeOverlay = null
             null -> when {
                 searchExpanded -> { searchExpanded = false; searchQuery = "" }
                 selectedFolder != null -> { selectedFolder = null }
@@ -263,6 +288,7 @@ fun MainLibraryUi(
                         0 -> VideosScreen(
                             backdrop = backdrop, videos = videos, hasPermission = hasVideoPermission,
                             hasScanError = hasMediaScanError, favouriteUris = favouriteUris,
+                            effectiveCategories = effectiveCategories,
                             onRequestPermission = onRequestMediaPermission, selectedFolder = selectedFolder,
                             onClearFolder = { selectedFolder = null }, onPlay = onPlay,
                             onChooseVideoFile = onChooseVideoFile,
@@ -386,6 +412,16 @@ fun MainLibraryUi(
                         },
                         onCancel = { activeOverlay = null }
                     )
+                },
+                onMoveToCategory = { activeOverlay = LibraryOverlayState.CategoryOverride(overlay.item) }
+            )
+            is LibraryOverlayState.CategoryOverride -> KyantCategoryDialog(
+                backdrop = backdrop,
+                currentCategory = effectiveCategories[overlay.item.uri.toString()] ?: MediaCategory.Other,
+                onDismissRequest = { activeOverlay = null },
+                onSave = { selectedCategory ->
+                    activeOverlay = null
+                    onSetCategoryOverride(overlay.item, selectedCategory)
                 }
             )
             null -> Unit
@@ -439,33 +475,48 @@ private fun VideosScreen(
     onRequestActions: (VideoItem) -> Unit,
     hasScanError: Boolean,
     favouriteUris: Set<String>,
+    effectiveCategories: Map<String, MediaCategory>,
     onRescan: () -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
-    // Recompute directly from the selected chip. TV detection uses both release
-    // naming conventions and media-store folder hierarchy, not only one regex.
-    val filtered = videos.filter { item ->
-        val name = item.name.lowercase(Locale.ROOT)
-        val pathSegments = item.relativePath.split('/').map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank)
-        val looksLikeTvEpisode = isLikelyTvEpisode(item.name, pathSegments)
-        val isAnime = pathSegments.any { it.contains("anime") } ||
-            listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
-        val isNonMovieFolder = pathSegments.any { nonMovieFolderPattern.matches(it) }
-        val matchesCategory = when (category) {
-            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder && item.durationMs >= 90L * 60L * 1_000L
-            "TV Shows" -> looksLikeTvEpisode
-            "Anime" -> isAnime
-            "Favourites" -> item.uri.toString() in favouriteUris
-            "Latest" -> true
-            else -> true
-        }
-        matchesCategory && (
-            selectedFolder == null ||
-                item.folderIdentity == selectedFolder ||
-                item.folderPath == selectedFolder // compatibility with a previously restored selection
+    val moviesLabel = stringResource(R.string.category_movies)
+    val tvShowsLabel = stringResource(R.string.category_tv_shows)
+    val animeLabel = stringResource(R.string.category_anime)
+    val otherLabel = stringResource(R.string.category_other)
+    val availableCategories = buildList {
+        add("All")
+        add("Latest")
+        add(moviesLabel)
+        add(tvShowsLabel)
+        if (effectiveCategories.values.any { it == MediaCategory.Anime } || category == animeLabel) add(animeLabel)
+        add("Favourites")
+        if (effectiveCategories.values.any { it == MediaCategory.Other } || category == otherLabel) add(otherLabel)
+    }
+    LaunchedEffect(availableCategories) {
+        if (category !in availableCategories) category = "All"
+    }
+    val filtered = remember(videos, category, selectedFolder, favouriteUris, effectiveCategories) {
+        videos.filter { item ->
+            val uri = item.uri.toString()
+            val itemCategory = effectiveCategories[uri] ?: MediaCategory.Other
+            val matchesCategory = when (category) {
+                moviesLabel -> itemCategory == MediaCategory.Movie
+                tvShowsLabel -> itemCategory == MediaCategory.TvShow
+                animeLabel -> itemCategory == MediaCategory.Anime
+                otherLabel -> itemCategory == MediaCategory.Other
+                "Favourites" -> uri in favouriteUris
+                "Latest", "All" -> true
+                else -> true
+            }
+            matchesCategory && (
+                selectedFolder == null ||
+                    item.folderIdentity == selectedFolder ||
+                    item.folderPath == selectedFolder
             )
-    }.let { items ->
-        if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
+        }.let { items ->
+            if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds)
+            else sortVideosAscending(items)
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -498,7 +549,7 @@ private fun VideosScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("All", "Latest", "Movies", "TV Shows", "Anime", "Favourites").forEach { label ->
+            availableCategories.forEach { label ->
                 FilterChip(
                     selected = category == label,
                     onClick = { category = label },
@@ -528,12 +579,16 @@ private fun VideosScreen(
                 title = when {
                     hasScanError -> "Library scan failed"
                     category == "Favourites" -> "No favourites yet"
+                    category == animeLabel -> "No anime videos yet"
+                    category == otherLabel -> "No videos are currently classified as Other"
                     videos.isEmpty() -> "No videos found"
                     else -> "Nothing matches"
                 },
                 message = when {
                     hasScanError -> "LUCENT couldn't read the video library. Scan again to retry."
                     category == "Favourites" -> "Favourite a video from the player tools and it will appear here."
+                    category == animeLabel -> stringResource(R.string.category_anime_empty)
+                    category == otherLabel -> stringResource(R.string.category_other_empty)
                     videos.isEmpty() -> "Videos on your device will appear here after a media scan."
                     else -> "Try another filter or search term."
                 },
@@ -1154,7 +1209,8 @@ private fun KyantVideoActionSheet(
     onInformation: () -> Unit,
     onRename: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMoveToCategory: () -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
         KyantOverlayScrim(onDismissRequest)
@@ -1178,6 +1234,7 @@ private fun KyantVideoActionSheet(
                 VideoActionItem(Icons.Default.Info, "Information", onInformation)
                 VideoActionItem(Icons.Default.Edit, "Rename", onRename)
                 VideoActionItem(Icons.Default.Share, "Share", onShare)
+                VideoActionItem(Icons.Default.Tune, stringResource(R.string.move_to_category), onMoveToCategory)
                 VideoActionItem(Icons.Default.Delete, "Delete", onDelete)
             }
         }
@@ -1195,6 +1252,61 @@ private fun videoInformationText(context: android.content.Context, item: VideoIt
         if (item.dateAddedSeconds > 0L) append("Added: " + DateFormat.getDateTimeInstance().format(Date(item.dateAddedSeconds * 1_000L)))
     }
 
+@Composable
+private fun KyantCategoryDialog(
+    backdrop: Backdrop,
+    currentCategory: MediaCategory,
+    onDismissRequest: () -> Unit,
+    onSave: (MediaCategory?) -> Unit
+) {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    var selection by remember(currentCategory) { mutableStateOf(currentCategory) }
+    KyantDialogCard(
+        backdrop,
+        stringResource(R.string.category_dialog_title),
+        onDismissRequest,
+        content = {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text(
+                    stringResource(R.string.category_explanation),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                MediaCategory.entries.forEach { option ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { selection = option }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(option.categoryLabelResource()),
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        if (selection == option) {
+                            Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+        },
+        actions = {
+            KyantButton(stringResource(R.string.category_automatic), false, light, { onSave(null) }, Modifier.weight(1f))
+            KyantButton(stringResource(R.string.category_save), true, light, { onSave(selection) }, Modifier.weight(1f))
+        }
+    )
+}
+
+private fun MediaCategory.categoryLabelResource(): Int = when (this) {
+    MediaCategory.Movie -> R.string.category_movie
+    MediaCategory.TvShow -> R.string.category_tv_show
+    MediaCategory.Anime -> R.string.category_anime
+    MediaCategory.Other -> R.string.category_other
+}
 @Composable
 private fun VideoActionItem(
     icon: ImageVector,
