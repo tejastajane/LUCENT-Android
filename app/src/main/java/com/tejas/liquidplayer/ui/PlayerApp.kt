@@ -31,6 +31,7 @@ import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.VideoRepository
 import com.tejas.liquidplayer.data.mediaPreferenceId
 import com.tejas.liquidplayer.data.PlaybackPrefs
+import com.tejas.liquidplayer.data.MediaCategory
 import com.tejas.liquidplayer.data.isResumablePlaybackPosition
 import com.tejas.liquidplayer.data.sortVideosAscending
 import com.tejas.liquidplayer.player.VideoPlayerScreen
@@ -65,6 +66,7 @@ fun LiquidPlayerApp(
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var mediaRefreshToken by remember { mutableIntStateOf(0) }
     var favouriteVersion by remember { mutableIntStateOf(0) }
+    var categoryOverrideVersion by remember { mutableIntStateOf(0) }
     var pullRefreshToken by remember { mutableIntStateOf(0) }
     var completedPullRefreshToken by remember { mutableIntStateOf(0) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -388,7 +390,10 @@ fun LiquidPlayerApp(
 
     androidx.compose.runtime.DisposableEffect(playerPreferences) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("favourite_") == true) favouriteVersion++
+            when {
+                key?.startsWith("favourite_") == true -> favouriteVersion++
+                key?.startsWith("category_override_") == true -> categoryOverrideVersion++
+            }
         }
         playerPreferences.registerOnSharedPreferenceChangeListener(listener)
         onDispose { playerPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -399,6 +404,16 @@ fun LiquidPlayerApp(
             .filter { item -> PlaybackPrefs.readFavourite(playerPreferences, item.uri.toString()) }
             .map { it.uri.toString() }
             .toSet()
+    }
+
+    val categoryOverrides = remember(videos, categoryOverrideVersion, playerPreferences) {
+        videos.mapNotNull { item ->
+            val uriString = item.uri.toString()
+            val category = MediaCategory.fromStorageValue(
+                playerPreferences.getString(PlaybackPrefs.key("category_override_", uriString), null)
+            )
+            category?.let { uriString to it }
+        }.toMap()
     }
 
     val documentPicker = rememberLauncherForActivityResult(
@@ -509,6 +524,13 @@ fun LiquidPlayerApp(
             isRefreshing = isRefreshing,
             hasMediaScanError = hasMediaScanError,
             favouriteUris = favouriteUris,
+            categoryOverrides = categoryOverrides,
+            onSetCategoryOverride = { item, category ->
+                val key = PlaybackPrefs.key("category_override_", item.uri.toString())
+                val editor = playerPreferences.edit()
+                if (category == null) editor.remove(key) else editor.putString(key, category.storageValue)
+                editor.apply()
+            },
             onRequestMediaPermission = {
                 val permissions = when {
                     Build.VERSION.SDK_INT >= 34 -> arrayOf(

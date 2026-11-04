@@ -5,4 +5,15 @@
     <string name="rename_error_empty">Enter a file name.</string>
     <string name="rename_error_invalid_character">A file name cannot contain / or a null character.</string>
     <string name="rename_error_too_long">The file name must be 255 UTF-8 bytes or fewer.</string>
+    <string name="move_to_category">Move to category</string>
+    <string name="category_dialog_title">Move to category</string>
+    <string name="category_explanation">Automatic classification uses episode numbering and video duration. Anime is assigned manually because a filename alone cannot reliably distinguish anime from other episodic shows.</string>
+    <string name="category_automatic">Automatic</string>
+    <string name="category_movie">Movie</string>
+    <string name="category_tv_show">TV Shows</string>
+    <string name="category_anime">Anime</string>
+    <string name="category_other">Other</string>
+    <string name="category_save">Save</string>
+    <string name="category_anime_empty">Move an anime video to Anime from its video options.</string>
+    <string name="category_other_empty">No videos are currently classified as Other.</string>
 </resources>
