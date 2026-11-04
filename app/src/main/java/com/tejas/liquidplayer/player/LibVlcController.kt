@@ -13,6 +13,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 import com.tejas.liquidplayer.data.TrackOption
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
@@ -51,11 +52,13 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     private var released = false
     private var contentDescriptor: ParcelFileDescriptor? = null
     private var cachedPlaybackFile: File? = null
+    private val cachedExternalSubtitleFiles = linkedSetOf<File>()
 
     private companion object {
         const val MAX_PROVIDER_CACHE_BYTES = 4L * 1024L * 1024L * 1024L
         const val MIN_FREE_SPACE_RESERVE_BYTES = 256L * 1024L * 1024L
         const val PROGRESS_UPDATE_INTERVAL_BYTES = 1024L * 1024L
+        const val MAX_EXTERNAL_SUBTITLE_CACHE_BYTES = 50L * 1024L * 1024L
     }
 
     fun attach(layout: VLCVideoLayout) {
@@ -302,8 +305,76 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     fun selectSubtitleTrack(id: Int): Boolean =
         !released && runCatching { player.setSpuTrack(id) }.getOrDefault(false)
 
-    fun addExternalSubtitle(uri: Uri): Boolean =
-        !released && runCatching { player.addSlave(0, uri, true) }.getOrDefault(false)
+    suspend fun addExternalSubtitle(uri: Uri): Boolean {
+        if (released) return false
+        val cachedFile = if (uri.scheme.equals("content", ignoreCase = true)) {
+            try {
+                copyExternalSubtitleToCache(uri)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.e("LUCENT/VLC", "Unable to copy external subtitle into the VLC cache", error)
+                return false
+            }
+        } else {
+            null
+        }
+        val subtitleUri = cachedFile?.let(Uri::fromFile) ?: uri
+        val added = runCatching { player.addSlave(0, subtitleUri, true) }.getOrDefault(false)
+        if (added && cachedFile != null) {
+            cachedExternalSubtitleFiles += cachedFile
+        } else {
+            cachedFile?.delete()
+        }
+        return added
+    }
+
+    private suspend fun copyExternalSubtitleToCache(uri: Uri): File = withContext(Dispatchers.IO) {
+        val displayName = runCatching {
+            appContext.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) cursor.getString(index) else null
+                } else null
+            }
+        }.getOrNull().orEmpty()
+        val extension = displayName.substringAfterLast('.', "srt")
+            .lowercase()
+            .filter(Char::isLetterOrDigit)
+            .take(8)
+            .ifBlank { "srt" }
+        val destination = File(appContext.cacheDir, "lucent-subtitle-${UUID.randomUUID()}.$extension")
+        try {
+            val input = appContext.contentResolver.openInputStream(uri)
+                ?: error("Android returned no readable stream for this subtitle.")
+            input.use { source ->
+                destination.outputStream().buffered().use { target ->
+                    val buffer = ByteArray(8 * 1024)
+                    var copiedBytes = 0L
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        copiedBytes += count
+                        require(copiedBytes <= MAX_EXTERNAL_SUBTITLE_CACHE_BYTES) {
+                            "The subtitle file is larger than the supported 50 MiB cache limit."
+                        }
+                        target.write(buffer, 0, count)
+                    }
+                }
+            }
+            destination
+        } catch (error: Throwable) {
+            destination.delete()
+            throw error
+        }
+    }
 
     fun close() {
         if (released) return
@@ -316,6 +387,8 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         contentDescriptor = null
         runCatching { cachedPlaybackFile?.delete() }
         cachedPlaybackFile = null
+        cachedExternalSubtitleFiles.forEach { runCatching { it.delete() } }
+        cachedExternalSubtitleFiles.clear()
         runCatching { libVlc.release() }
     }
 }

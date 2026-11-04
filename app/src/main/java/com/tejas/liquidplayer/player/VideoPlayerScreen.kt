@@ -534,20 +534,19 @@ fun VideoPlayerScreen(
             runCatching {
                 context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val added = controller.addExternalSubtitle(uri)
-            if (added) {
-                playerPreferences.edit()
-                    .putString(externalSubtitleUriKey, uri.toString())
-                    
-                    .remove(subtitleTrackIdKey)
-                    
-                    .remove(subtitleTrackLabelKey)
-                    
-                    .apply()
-                selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+            retryScope.launch {
+                val added = controller.addExternalSubtitle(uri)
+                if (added) {
+                    playerPreferences.edit()
+                        .putString(externalSubtitleUriKey, uri.toString())
+                        .remove(subtitleTrackIdKey)
+                        .remove(subtitleTrackLabelKey)
+                        .apply()
+                    selectedSubtitleTrackId = controller.currentSubtitleTrackId()
+                }
+                trackSelectionMessage = if (added) "External subtitle added" else "VLC couldn't add this subtitle file."
+                panel = PlayerPanel.Subtitles
             }
-            trackSelectionMessage = if (added) "External subtitle added" else "VLC couldn't add this subtitle file."
-            panel = PlayerPanel.Subtitles
         }
     }
 
