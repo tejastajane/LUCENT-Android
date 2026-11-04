@@ -139,18 +139,22 @@ fun LiquidPlayerApp(
         if (mutation != null) {
             // MANAGE_MEDIA plus ACCESS_MEDIA_LOCATION suppresses Android's per-file
             // write confirmation. If denied, the normal one-file approval still works.
-            pendingMediaMutation = mutation
-            runCatching {
-                val request = MediaStore.createWriteRequest(
-                    context.contentResolver,
-                    listOf(mutation.video.uri)
-                )
-                mediaMutationLauncher.launch(
-                    IntentSenderRequest.Builder(request.intentSender).build()
-                )
-            }.onFailure {
-                pendingMediaMutation = null
-                Toast.makeText(context, "Couldn't prepare rename request.", Toast.LENGTH_LONG).show()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                pendingMediaMutation = mutation
+                runCatching {
+                    val request = MediaStore.createWriteRequest(
+                        context.contentResolver,
+                        listOf(mutation.video.uri)
+                    )
+                    mediaMutationLauncher.launch(
+                        IntentSenderRequest.Builder(request.intentSender).build()
+                    )
+                }.onFailure {
+                    pendingMediaMutation = null
+                    Toast.makeText(context, "Couldn't prepare rename request.", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(context, "Android media rename requests require Android 11 or later.", Toast.LENGTH_LONG).show()
             }
         }
     }
