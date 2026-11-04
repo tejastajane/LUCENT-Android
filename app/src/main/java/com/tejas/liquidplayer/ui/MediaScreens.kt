@@ -1048,7 +1048,7 @@ private fun VideoRow(
     onRequestActions: (VideoItem) -> Unit
 ) {
     val context = LocalContext.current
-    val thumbnail by produceState<Bitmap?>(initialValue = VideoThumbnailLoader.load(context, item), item.uri, item.durationMs, item.sizeBytes) {
+    val thumbnail by produceState<Bitmap?>(initialValue = null, item.uri, item.durationMs, item.sizeBytes) {
         value = VideoThumbnailLoader.load(context, item)
     }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
