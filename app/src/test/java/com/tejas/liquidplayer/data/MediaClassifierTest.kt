@@ -4,15 +4,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MediaClassifierTest {
-    private fun item(uri: String, name: String, folder: String = "volume|downloads", duration: Long = 0L) =
-        MediaClassifierInput(uri, name, folder, duration)
+    private fun item(
+        uri: String,
+        name: String,
+        folder: String = "volume|downloads",
+        duration: Long = 0L
+    ) = MediaClassifierInput(uri, name, folder, duration)
 
-    @Test fun recognizesGenericEpisodeNumberFormats() {
+    @Test fun recognizesGenericEpisodeNumberFormatsForLongEpisodes() {
+        val longEpisode = MediaClassifier.MIN_MOVIE_DURATION_MS + 1L
         val result = MediaClassifier.classify(listOf(
-            item("1", "Show.S02E05.mkv"),
-            item("2", "Show 1x03.mkv"),
-            item("3", "Season 2 Episode 4.mp4"),
-            item("4", "Episode 12.mkv")
+            item("1", "Show.S02E05.mkv", duration = longEpisode),
+            item("2", "Show 1x03.mkv", duration = longEpisode),
+            item("3", "Season 2 Episode 4.mp4", duration = longEpisode),
+            item("4", "Episode 12.mkv", duration = longEpisode)
         ))
         assertEquals(MediaCategory.TvShow, result["1"])
         assertEquals(MediaCategory.TvShow, result["2"])
@@ -20,13 +25,25 @@ class MediaClassifierTest {
         assertEquals(MediaCategory.TvShow, result["4"])
     }
 
-    @Test fun genericSequentialSiblingsFormASeriesWithoutTitleAllowLists() {
+    @Test fun genericSequentialSiblingsDisambiguateLongEpisodesFromMovies() {
+        val longEpisode = MediaClassifier.MIN_MOVIE_DURATION_MS + 1L
         val result = MediaClassifier.classify(listOf(
-            item("1", "[Group] Project North - 001 (1080p).mkv"),
-            item("2", "[Group] Project North - 002 (1080p).mkv"),
-            item("3", "[Group] Project North - 003 (1080p).mkv")
+            item("1", "[Group] Project North - 001 (1080p).mkv", duration = longEpisode),
+            item("2", "[Group] Project North - 002 (1080p).mkv", duration = longEpisode),
+            item("3", "[Group] Project North - 003 (1080p).mkv", duration = longEpisode)
         ))
         assertEquals(setOf(MediaCategory.TvShow), result.values.toSet())
+    }
+
+    @Test fun shortCameraClipsNeverBecomeTvShowsFromNumberedSiblingNames() {
+        val result = MediaClassifier.classify(listOf(
+            item("1", "IMG_6297.MOV", folder = "volume|Quick Share", duration = 4_000L),
+            item("2", "IMG_6350.MOV", folder = "volume|Quick Share", duration = 4_000L),
+            item("3", "IMG_6351.MOV", folder = "volume|Quick Share", duration = 7_000L),
+            item("4", "IMG_6456.MOV", folder = "volume|Quick Share", duration = 26_000L),
+            item("5", "Show.S01E01.mkv", duration = 15L * 60L * 1_000L)
+        ))
+        assertEquals(setOf(MediaCategory.Other), result.values.toSet())
     }
 
     @Test fun oneNumberedFileDoesNotBecomeATvShowByItself() {
@@ -58,11 +75,7 @@ class MediaClassifierTest {
 
     @Test fun animeRuntimeTakesPrecedenceOverEpisodeNumbering() {
         val result = MediaClassifier.classify(listOf(
-            item(
-                "1",
-                "Show.S01E01.mkv",
-                duration = 22L * 60L * 1_000L
-            )
+            item("1", "Show.S01E01.mkv", duration = 22L * 60L * 1_000L)
         ))
         assertEquals(MediaCategory.Anime, result["1"])
     }
@@ -86,5 +99,4 @@ class MediaClassifierTest {
         assertEquals(MediaCategory.Other, result["1"])
         assertEquals(MediaCategory.Other, result["2"])
     }
-
 }

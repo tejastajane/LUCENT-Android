@@ -17,8 +17,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
@@ -99,7 +97,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
@@ -334,8 +331,8 @@ fun MainLibraryUi(
         AnimatedVisibility(
             visible = recentVideo != null && showRecentPlayState.value && !searchExpanded,
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 108.dp),
-            enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { it * 2 },
-            exit = fadeOut(tween(130)) + slideOutVertically(tween(180)) { it * 3 }
+            enter = fadeIn(tween(160)),
+            exit = fadeOut(tween(130))
         ) {
             val item = recentVideo
             if (item != null) ResumePlaybackPill(
@@ -1460,8 +1457,7 @@ private fun BottomNavigation(
                 onTabSelected = onTabSelected,
                 backdrop = backdrop,
                 tabsCount = navItems.size,
-                modifier = Modifier.width(tabsWidth).height(tabsHeight)
-                    .shadow(12.dp, RoundedCornerShape(50.dp), clip = false),
+                modifier = Modifier.width(tabsWidth).height(tabsHeight),
                 collapseProgress = collapseProgress,
                 activeContent = { index ->
                     val (icon, label) = navItems[index.coerceIn(0, navItems.lastIndex)]
@@ -1527,8 +1523,7 @@ private fun BottomNavigation(
                 modifier = searchModifier,
                 cornerRadius = 50.dp,
                 surfaceAlpha = 0.055f,
-                navMaterial = true,
-                dropShadowElevation = 12.dp
+                navMaterial = true
             ) {
                 AnimatedContent(
                     targetState = searchExpanded,

@@ -74,8 +74,8 @@ fun LiquidPlayerApp(
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     var hasMediaManagementAccess by remember { mutableStateOf(canManageMedia(context)) }
     var showMediaManagementOnboarding by remember { mutableStateOf(false) }
-    var pendingDeleteAfterMediaAccess by remember {
-        mutableStateOf<PendingMediaMutation.Delete?>(null)
+    var pendingRenameAfterMediaLocation by remember {
+        mutableStateOf<PendingMediaMutation.Rename?>(null)
     }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var pendingLegacyMutation by remember { mutableStateOf<PendingMediaMutation?>(null) }
@@ -111,7 +111,7 @@ fun LiquidPlayerApp(
         if (result.resultCode == Activity.RESULT_OK && mutation != null) {
             // MediaStore.createDeleteRequest performs the deletion itself after approval.
             // Do not issue a second ContentResolver.delete for the same item.
-            if (mutation is PendingMediaMutation.Delete && Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            if (mutation is PendingMediaMutation.Delete && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 Toast.makeText(context, "Video deleted.", Toast.LENGTH_SHORT).show()
                 mediaRefreshToken++
             } else {
@@ -127,6 +127,30 @@ fun LiquidPlayerApp(
                         Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
                     }
                 }
+            }
+        }
+    }
+
+    val mediaLocationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        val mutation = pendingRenameAfterMediaLocation
+        pendingRenameAfterMediaLocation = null
+        if (mutation != null) {
+            // MANAGE_MEDIA plus ACCESS_MEDIA_LOCATION suppresses Android's per-file
+            // write confirmation. If denied, the normal one-file approval still works.
+            pendingMediaMutation = mutation
+            runCatching {
+                val request = MediaStore.createWriteRequest(
+                    context.contentResolver,
+                    listOf(mutation.video.uri)
+                )
+                mediaMutationLauncher.launch(
+                    IntentSenderRequest.Builder(request.intentSender).build()
+                )
+            }.onFailure {
+                pendingMediaMutation = null
+                Toast.makeText(context, "Couldn't prepare rename request.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -162,9 +186,7 @@ fun LiquidPlayerApp(
         ActivityResultContracts.StartActivityForResult()
     ) {
         hasMediaManagementAccess = canManageMedia(context)
-        if (!hasMediaManagementAccess) {
-            pendingDeleteAfterMediaAccess = null
-        }
+
     }
 
     LaunchedEffect(hasVideoPermission, hasMediaManagementAccess) {
@@ -197,55 +219,12 @@ fun LiquidPlayerApp(
             runCatching {
                 mediaManagementSettingsLauncher.launch(intent)
             }.onFailure {
-                pendingDeleteAfterMediaAccess = null
                 Toast.makeText(context, "Unable to open media management settings.", Toast.LENGTH_LONG).show()
             }
         }
     }
 
     fun startMediaMutation(mutation: PendingMediaMutation) {
-        if (mutation is PendingMediaMutation.Delete) {
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    !canManageMedia(context) -> {
-                    pendingDeleteAfterMediaAccess = mutation
-                    requestMediaManagementAccess()
-                    return
-                }
-                Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ||
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                    // Android 10 supports recoverable per-file approval. Android 12+
-                    // reaches this direct path only after MANAGE_MEDIA has been granted.
-                    when (val outcome = executeMediaMutation(context, mutation)) {
-                        is MediaMutationOutcome.Success -> {
-                            Toast.makeText(context, outcome.message, Toast.LENGTH_SHORT).show()
-                            mediaRefreshToken++
-                        }
-                        is MediaMutationOutcome.NeedsApproval -> {
-                            // Android 12+ has already granted MANAGE_MEDIA. Do not re-open
-                            // Android's per-file delete-consent sheet from this fallback path.
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                Toast.makeText(context, "Couldn't delete this video.", Toast.LENGTH_SHORT).show()
-                            } else {
-                                pendingMediaMutation = mutation
-                                mediaMutationLauncher.launch(
-                                    IntentSenderRequest.Builder(outcome.intentSender).build()
-                                )
-                            }
-                        }
-                        is MediaMutationOutcome.Failure -> {
-                            val message = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                "Couldn't delete this video."
-                            } else {
-                                outcome.message
-                            }
-                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                    return
-                }
-            }
-        }
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
             ContextCompat.checkSelfPermission(
                 context,
@@ -256,7 +235,29 @@ fun LiquidPlayerApp(
             legacyWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             return
         }
+
+        if (
+            mutation is PendingMediaMutation.Rename &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            canManageMedia(context) &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_MEDIA_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED &&
+            !settingsPreferences.getBoolean("media_location_permission_prompted", false)
+        ) {
+            pendingRenameAfterMediaLocation = mutation
+            settingsPreferences.edit()
+                .putBoolean("media_location_permission_prompted", true)
+                .apply()
+            mediaLocationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            return
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // MediaStore owns the mutation request on Android 11+. MANAGE_MEDIA
+            // suppresses per-file confirmation on Android 12+; it does not replace
+            // createDeleteRequest/createWriteRequest.
             val request = when (mutation) {
                 is PendingMediaMutation.Rename -> MediaStore.createWriteRequest(
                     context.contentResolver,
@@ -287,14 +288,6 @@ fun LiquidPlayerApp(
                     Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
                 }
             }
-        }
-    }
-
-    LaunchedEffect(hasMediaManagementAccess, pendingDeleteAfterMediaAccess) {
-        val pendingDelete = pendingDeleteAfterMediaAccess
-        if (hasMediaManagementAccess && pendingDelete != null) {
-            pendingDeleteAfterMediaAccess = null
-            startMediaMutation(pendingDelete)
         }
     }
 

@@ -22,12 +22,9 @@ internal data class MediaClassifierInput(
 )
 
 /**
- * Local, title-independent classification. Runtime provides broad Anime and TV-show signals,
- * while generic episode numbering and sibling sequence structure catch episodes outside those
- * runtime bands. It never searches for show names or category words in file paths.
- *
- * The 90-minute movie threshold remains in place; explicit episode structure takes precedence
- * over that threshold so long-form episodes are not automatically labelled as movies.
+ * Local, title-independent classification. Runtime is a hard lower bound for Anime and TV Shows.
+ * Episode numbering and sibling sequences only disambiguate long-form content (90 minutes or
+ * longer) from movies. No show names or category words are searched in file paths.
  */
 internal object MediaClassifier {
     const val MIN_ANIME_DURATION_MS = 21L * 60L * 1_000L
@@ -80,11 +77,11 @@ internal object MediaClassifier {
                 (numbered.folderIdentity to numbered.normalizedStem) in seriesGroups
             val isAnimeRuntime = item.durationMs >= MIN_ANIME_DURATION_MS &&
                 item.durationMs < MIN_TV_SHOW_DURATION_MS
+            val hasEpisodeStructure = hasExplicitEpisodeNumber(item.name) || belongsToSeries
             val category = when {
-                // Runtime is the deciding signal in this band, including numbered anime releases.
+                // Runtime boundaries are strict: no clip shorter than 29 minutes is a TV Show.
                 isAnimeRuntime -> MediaCategory.Anime
-                hasExplicitEpisodeNumber(item.name) || belongsToSeries -> MediaCategory.TvShow
-                item.durationMs >= MIN_MOVIE_DURATION_MS -> MediaCategory.Movie
+                item.durationMs >= MIN_MOVIE_DURATION_MS && !hasEpisodeStructure -> MediaCategory.Movie
                 item.durationMs >= MIN_TV_SHOW_DURATION_MS -> MediaCategory.TvShow
                 else -> MediaCategory.Other
             }
