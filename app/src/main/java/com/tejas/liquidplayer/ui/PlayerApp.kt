@@ -656,9 +656,11 @@ private fun executeMediaMutation(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && error is RecoverableSecurityException) {
             MediaMutationOutcome.NeedsApproval(error.userAction.actionIntent.intentSender)
         } else {
-            MediaMutationOutcome.Failure(error.message ?: "Permission denied while changing the video.")
+            android.util.Log.w("LUCENT/MediaMutation", "Media change was denied by Android", error)
+            MediaMutationOutcome.Failure("LUCENT does not have permission to change this video. Refresh the library or check media access in Android settings.")
         }
     } catch (error: Exception) {
-        MediaMutationOutcome.Failure(error.message ?: "The video could not be changed.")
+        android.util.Log.e("LUCENT/MediaMutation", "Unable to change media", error)
+        MediaMutationOutcome.Failure("Couldn't change this video. Please refresh the library and try again.")
     }
 }

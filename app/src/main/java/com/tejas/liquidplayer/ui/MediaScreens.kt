@@ -360,21 +360,9 @@ fun MainLibraryUi(
                 onDismissRequest = { activeOverlay = null },
                 onSave = { item, name ->
                     activeOverlay = null
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        activeOverlay = LibraryOverlayState.Message(
-                            title = "Approve rename?",
-                            message = "Android may ask you to approve this rename in a system dialog. LUCENT keeps that platform approval for file writes and does not request additional media-location access just to suppress it.",
-                            confirmLabel = "Continue",
-                            cancelLabel = "Cancel",
-                            onConfirm = {
-                                activeOverlay = null
-                                onRenameVideo(item, name)
-                            },
-                            onCancel = { activeOverlay = null }
-                        )
-                    } else {
-                        onRenameVideo(item, name)
-                    }
+                    // Start the platform mutation directly. Android presents its own approval
+                    // UI only when this URI and OS version require it.
+                    onRenameVideo(item, name)
                 }
             )
             is LibraryOverlayState.VideoActions -> KyantVideoActionSheet(
