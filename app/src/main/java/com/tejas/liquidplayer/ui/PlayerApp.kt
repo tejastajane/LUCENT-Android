@@ -65,6 +65,8 @@ fun LiquidPlayerApp(
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var mediaRefreshToken by remember { mutableIntStateOf(0) }
     var favouriteVersion by remember { mutableIntStateOf(0) }
+    var pullRefreshToken by remember { mutableIntStateOf(0) }
+    var completedPullRefreshToken by remember { mutableIntStateOf(0) }
     var isRefreshing by remember { mutableStateOf(false) }
     var hasMediaScanError by remember { mutableStateOf(false) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
@@ -426,7 +428,11 @@ fun LiquidPlayerApp(
         }
     }
 
-    LaunchedEffect(hasVideoPermission, mediaRefreshToken) {
+    LaunchedEffect(hasVideoPermission, mediaRefreshToken, pullRefreshToken) {
+        val requestToken = pullRefreshToken
+        val isPullRefresh = requestToken > completedPullRefreshToken
+        if (isPullRefresh) isRefreshing = true
+        var refreshCompleted = false
         try {
             if (!hasVideoPermission) {
                 videos = emptyList()
@@ -449,8 +455,14 @@ fun LiquidPlayerApp(
                     Toast.makeText(context, "Couldn't scan the video library. Try scanning again.", Toast.LENGTH_LONG).show()
                 }
             }
+            refreshCompleted = true
         } finally {
-            if (mediaRefreshToken > 0) isRefreshing = false
+            // A cancelled scan must not clear the indicator while its replacement scan is
+            // still servicing the same pull-to-refresh request.
+            if (isPullRefresh && refreshCompleted && pullRefreshToken == requestToken) {
+                completedPullRefreshToken = requestToken
+                isRefreshing = false
+            }
         }
     }
 
@@ -539,7 +551,7 @@ fun LiquidPlayerApp(
             onThemeChanged = onThemeChanged,
             onPullToRefresh = {
                 hasVideoPermission = hasMediaPermission(context)
-                isRefreshing = true
+                pullRefreshToken++
                 mediaRefreshToken++
             },
             onRescan = {
