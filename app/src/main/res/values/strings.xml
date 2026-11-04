@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LUCENT</string>
-    <string name="player_legacy_file_uri_error">Android 13 and newer cannot grant LUCENT access to this legacy file:// link. Ask the sending app to share the video as a content URI, or open it with LUCENT&apos;s file picker.</string>
+    <string name="player_legacy_file_uri_error">Android 13 and newer cannot open this legacy file link. Ask the sending app to share the video again, or select it from the LUCENT file picker.</string>
     <string name="rename_error_empty">Enter a file name.</string>
     <string name="rename_error_invalid_character">A file name cannot contain / or a null character.</string>
     <string name="rename_error_too_long">The file name must be 255 UTF-8 bytes or fewer.</string>
