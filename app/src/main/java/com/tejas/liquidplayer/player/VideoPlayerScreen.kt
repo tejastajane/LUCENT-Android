@@ -193,6 +193,81 @@ fun VideoPlayerScreen(
     isInPictureInPictureMode: Boolean
 ) {
     val context = LocalContext.current
+    val controllerInitialization = remember(context, hardwareAcceleration) {
+        try {
+            LibVlcController(context, hardwareAcceleration) to null
+        } catch (error: Throwable) {
+            null to error
+        }
+    }
+    val controller = controllerInitialization.first
+    if (controller == null) {
+        val initializationError = controllerInitialization.second
+        LaunchedEffect(initializationError) {
+            Log.e("LUCENT/Player", "Unable to initialize libVLC", initializationError)
+        }
+        PlayerInitializationErrorScreen(onClose)
+    } else {
+        VideoPlayerScreenContent(
+            video = video,
+            playlist = playlist,
+            onSelectVideo = onSelectVideo,
+            onClose = onClose,
+            hardwareAcceleration = hardwareAcceleration,
+            gesturesEnabled = gesturesEnabled,
+            isInPictureInPictureMode = isInPictureInPictureMode,
+            controller = controller
+        )
+    }
+}
+
+@Composable
+private fun PlayerInitializationErrorScreen(onClose: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                "LUCENT couldn't initialize the video player",
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "The playback engine could not be loaded on this device. You can return to your library and try again, or change hardware acceleration in Settings.",
+                color = Color.White.copy(alpha = 0.78f),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Button(
+                onClick = onClose,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text("Back to library")
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoPlayerScreenContent(
+    video: VideoItem,
+    playlist: List<VideoItem>,
+    onSelectVideo: (VideoItem) -> Unit,
+    onClose: () -> Unit,
+    hardwareAcceleration: Boolean,
+    gesturesEnabled: Boolean,
+    isInPictureInPictureMode: Boolean,
+    controller: LibVlcController
+) {
+    val context = LocalContext.current
     val activity = context.findActivity()
     val lifecycleOwner = LocalLifecycleOwner.current
     val audioManager = remember(context) {
@@ -201,7 +276,6 @@ fun VideoPlayerScreen(
     val systemVolumeMax = remember(audioManager) {
         audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
     }
-    val controller = remember(context, hardwareAcceleration) { LibVlcController(context, hardwareAcceleration) }
     val playerPreferences = remember(context) { context.getSharedPreferences("liquid_player", Context.MODE_PRIVATE) }
     val lastBrightnessKey = "last_player_brightness"
     val mediaUriString = remember(video.uri) { video.uri.toString() }
