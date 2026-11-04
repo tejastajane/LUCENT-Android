@@ -22,12 +22,16 @@ internal data class MediaClassifierInput(
 )
 
 /**
- * Local, title-independent classification. It uses generic episode numbering and sibling
- * sequence structure only; it never searches for show names or category words in file paths.
- * Anime is intentionally left to an explicit user override because filenames alone cannot
- * reliably distinguish anime from other episodic video.
+ * Local, title-independent classification. Runtime provides broad Anime and TV-show signals,
+ * while generic episode numbering and sibling sequence structure catch episodes outside those
+ * runtime bands. It never searches for show names or category words in file paths.
+ *
+ * The 90-minute movie threshold remains in place; explicit episode structure takes precedence
+ * over that threshold so long-form episodes are not automatically labelled as movies.
  */
 internal object MediaClassifier {
+    const val MIN_ANIME_DURATION_MS = 21L * 60L * 1_000L
+    const val MIN_TV_SHOW_DURATION_MS = 29L * 60L * 1_000L
     const val MIN_MOVIE_DURATION_MS = 90L * 60L * 1_000L
 
     private data class NumberedSibling(
@@ -74,9 +78,14 @@ internal object MediaClassifier {
             val numbered = numberedSibling(item)
             val belongsToSeries = numbered != null &&
                 (numbered.folderIdentity to numbered.normalizedStem) in seriesGroups
+            val isAnimeRuntime = item.durationMs >= MIN_ANIME_DURATION_MS &&
+                item.durationMs < MIN_TV_SHOW_DURATION_MS
             val category = when {
+                // Runtime is the deciding signal in this band, including numbered anime releases.
+                isAnimeRuntime -> MediaCategory.Anime
                 hasExplicitEpisodeNumber(item.name) || belongsToSeries -> MediaCategory.TvShow
                 item.durationMs >= MIN_MOVIE_DURATION_MS -> MediaCategory.Movie
+                item.durationMs >= MIN_TV_SHOW_DURATION_MS -> MediaCategory.TvShow
                 else -> MediaCategory.Other
             }
             item.uri to category

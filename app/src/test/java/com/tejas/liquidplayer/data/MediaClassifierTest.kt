@@ -39,6 +39,45 @@ class MediaClassifierTest {
         assertEquals(MediaCategory.Other, result["1"])
     }
 
+    @Test fun runtimeBandClassifiesAnimeFromTwentyOneMinutesUntilTwentyNineMinutes() {
+        val result = MediaClassifier.classify(listOf(
+            item("1", "Twenty One Minutes.mkv", duration = MediaClassifier.MIN_ANIME_DURATION_MS),
+            item(
+                "2",
+                "Twenty Eight Fifty Nine.mkv",
+                duration = MediaClassifier.MIN_TV_SHOW_DURATION_MS - 1L
+            ),
+            item("3", "Under Twenty One.mkv", duration = MediaClassifier.MIN_ANIME_DURATION_MS - 1L),
+            item("4", "Twenty Nine Minutes.mkv", duration = MediaClassifier.MIN_TV_SHOW_DURATION_MS)
+        ))
+        assertEquals(MediaCategory.Anime, result["1"])
+        assertEquals(MediaCategory.Anime, result["2"])
+        assertEquals(MediaCategory.Other, result["3"])
+        assertEquals(MediaCategory.TvShow, result["4"])
+    }
+
+    @Test fun animeRuntimeTakesPrecedenceOverEpisodeNumbering() {
+        val result = MediaClassifier.classify(listOf(
+            item(
+                "1",
+                "Show.S01E01.mkv",
+                duration = 22L * 60L * 1_000L
+            )
+        ))
+        assertEquals(MediaCategory.Anime, result["1"])
+    }
+
+    @Test fun tvShowRuntimeStartsAtTwentyNineMinutesAndPreservesMovieThreshold() {
+        val result = MediaClassifier.classify(listOf(
+            item("1", "Twenty Nine Minutes.mkv", duration = MediaClassifier.MIN_TV_SHOW_DURATION_MS),
+            item("2", "Eighty Nine Fifty Nine.mkv", duration = MediaClassifier.MIN_MOVIE_DURATION_MS - 1L),
+            item("3", "Ninety Minute Feature.mkv", duration = MediaClassifier.MIN_MOVIE_DURATION_MS)
+        ))
+        assertEquals(MediaCategory.TvShow, result["1"])
+        assertEquals(MediaCategory.TvShow, result["2"])
+        assertEquals(MediaCategory.Movie, result["3"])
+    }
+
     @Test fun noSpecificTitleOrFolderWordIsUsedAsAnAnimeTag() {
         val result = MediaClassifier.classify(listOf(
             item("1", "Naruto.mkv", folder = "volume|Anime"),
@@ -54,6 +93,6 @@ class MediaClassifierTest {
             item("2", "Shorter Film.mkv", duration = MediaClassifier.MIN_MOVIE_DURATION_MS - 1L)
         ))
         assertEquals(MediaCategory.Movie, result["1"])
-        assertEquals(MediaCategory.Other, result["2"])
+        assertEquals(MediaCategory.TvShow, result["2"])
     }
 }
