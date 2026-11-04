@@ -1092,7 +1092,7 @@ private fun VideoPlayerScreenContent(
                                     persistBrightnessAfterDrag()
                                 }
                             },
-                            onDrag = { _, dragAmount ->
+                            onDrag = { change, dragAmount ->
                                 accumulatedDragDistance += dragAmount
                                 if (dragAxis == 0) {
                                     when (
