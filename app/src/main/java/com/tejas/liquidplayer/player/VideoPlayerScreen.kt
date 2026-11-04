@@ -346,6 +346,9 @@ fun VideoPlayerScreen(
     var seekFeedbackDirection by remember { mutableIntStateOf(0) }
     var seekFeedbackAmountMs by remember { mutableLongStateOf(0L) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
+    var isUserSeeking by remember(video.uri) { mutableStateOf(false) }
+    var seekStartPositionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
+    var lastSeekDispatchAtMs by remember(video.uri) { mutableLongStateOf(0L) }
     var swipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
     var swipeSeekPreviewPoint by remember(video.uri) { mutableStateOf(Offset.Zero) }
     var showSwipeSeekHint by remember(video.uri) { mutableStateOf(false) }
@@ -692,7 +695,7 @@ fun VideoPlayerScreen(
             val currentTime = runCatching { controller.player.time }.getOrDefault(0L).coerceAtLeast(0L)
             val mediaLength = runCatching { controller.player.length }.getOrDefault(0L)
             val playingNow = runCatching { controller.player.isPlaying }.getOrDefault(false)
-            positionMs = currentTime
+            if (!isUserSeeking) positionMs = currentTime
             if (mediaLength > 0L) durationMs = mediaLength
             isPlaying = playingNow
             // Reflect physical volume-button changes in the on-screen gesture indicator.
@@ -706,7 +709,7 @@ fun VideoPlayerScreen(
                 resumePositionApplied = true
             }
             val now = SystemClock.elapsedRealtime()
-            if (now - lastSavedAt >= 1_000L) {
+            if (!isUserSeeking && now - lastSavedAt >= 5_000L) {
                 val storedPosition = if (mediaLength > 0L && currentTime >= mediaLength - 2_500L) 0L else currentTime
                 playerPreferences.edit().putLong(progressKey, storedPosition).apply()
                 lastSavedAt = now
@@ -1214,10 +1217,33 @@ fun VideoPlayerScreen(
                         backdrop = backdrop,
                         positionMs = positionMs,
                         durationMs = durationMs,
-                        onSeek = { target ->
+                        onSeekStart = {
+                            seekStartPositionMs = runCatching { controller.player.time }
+                                .getOrDefault(positionMs)
+                                .coerceIn(0L, durationMs.coerceAtLeast(0L))
+                            lastSeekDispatchAtMs = 0L
+                            isUserSeeking = true
+                        },
+                        onSeekPreview = { target ->
                             positionMs = target
                             controlsInteractionToken++
+                            val now = SystemClock.elapsedRealtime()
+                            if (lastSeekDispatchAtMs == 0L || now - lastSeekDispatchAtMs >= 100L) {
+                                controller.seekTo(target)
+                                lastSeekDispatchAtMs = now
+                            }
+                        },
+                        onSeek = { target ->
+                            positionMs = target
+                            isUserSeeking = false
+                            controlsInteractionToken++
                             controller.seekTo(target)
+                            lastSeekDispatchAtMs = SystemClock.elapsedRealtime()
+                        },
+                        onSeekCancel = {
+                            controller.seekTo(seekStartPositionMs)
+                            positionMs = seekStartPositionMs
+                            isUserSeeking = false
                         },
                         modifier = Modifier.weight(1f).padding(horizontal = if (isLandscape) 14.dp else 10.dp)
                     )
@@ -1861,6 +1887,9 @@ private fun LiquidSeekBar(
     positionMs: Long,
     durationMs: Long,
     onSeek: (Long) -> Unit,
+    onSeekStart: () -> Unit,
+    onSeekPreview: (Long) -> Unit,
+    onSeekCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Main-branch capsule dimensions and pointer-to-time mapping.
@@ -1874,6 +1903,9 @@ private fun LiquidSeekBar(
     val latestPosition = rememberUpdatedState(positionMs)
     val latestDuration = rememberUpdatedState(durationMs)
     val latestOnSeek = rememberUpdatedState(onSeek)
+    val latestOnSeekStart = rememberUpdatedState(onSeekStart)
+    val latestOnSeekPreview = rememberUpdatedState(onSeekPreview)
+    val latestOnSeekCancel = rememberUpdatedState(onSeekCancel)
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
@@ -1921,6 +1953,7 @@ private fun LiquidSeekBar(
         val trackWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val usableWidthPx = (trackWidthPx - thumbWidthPx).coerceAtLeast(1f)
         val thumbTravelPx = usableWidthPx
+        var dragStartPositionMs by remember(durationMs) { mutableLongStateOf(positionMs) }
 
         val dampedDragAnimation = remember(animationScope) {
             DampedDragAnimation(
@@ -1974,18 +2007,28 @@ private fun LiquidSeekBar(
                         detectDragGestures(
                             onDragStart = { point ->
                                 val target = fractionAt(point.x)
+                                dragStartPositionMs = latestPosition.value
                                 dampedDragAnimation.press()
                                 dampedDragAnimation.updateValue(target)
-                                latestOnSeek.value(
+                                latestOnSeekStart.value()
+                                latestOnSeekPreview.value(
                                     (target * latestDuration.value).toLong().coerceAtLeast(0L)
                                 )
                             },
-                            onDragEnd = { dampedDragAnimation.release() },
-                            onDragCancel = { dampedDragAnimation.release() },
+                            onDragEnd = {
+                                dampedDragAnimation.release()
+                                val target = (dampedDragAnimation.targetValue * latestDuration.value)
+                                    .toLong().coerceIn(0L, latestDuration.value.coerceAtLeast(0L))
+                                latestOnSeek.value(target)
+                            },
+                            onDragCancel = {
+                                dampedDragAnimation.release()
+                                latestOnSeekCancel.value()
+                            },
                             onDrag = { change, _ ->
                                 val target = fractionAt(change.position.x)
                                 dampedDragAnimation.updateValue(target)
-                                latestOnSeek.value(
+                                latestOnSeekPreview.value(
                                     (target * latestDuration.value).toLong().coerceAtLeast(0L)
                                 )
                                 change.consume()
