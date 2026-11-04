@@ -1552,24 +1552,6 @@ private fun BottomNavigation(
 }
 
 
-private val tvEpisodeNamePattern = Regex(
-    """(?i)(?:\bs\d{1,2}\s*[._ -]*e\d{1,3}\b|\b\d{1,2}\s*x\s*\d{1,3}\b|\b(?:season|episode|ep)\s*[._ #:-]*\d{1,3}\b|\b\d{1,2}e\d{1,3}\b|^\s*(?:episode|ep)[ ._-]*\d{1,3}\b)"""
-)
-private val tvFolderPattern = Regex(
-    """(?i)^(?:tv|tv shows?|shows?|series|web[ ._-]*series|episodes?|season[ ._-]*\d+|s\d{1,2}|anime series|cartoon series)$"""
-)
-
-private fun isLikelyTvEpisode(name: String, pathSegments: List<String>): Boolean {
-    val stem = name.substringBeforeLast('.', name).lowercase(Locale.ROOT).replace('_', ' ')
-    // Some downloads use leading episode numbers inside per-show folders.
-    val numberedEpisode = Regex("""(?i)^\s*\[?\d{1,3}\]?\s*[._ -]+""").containsMatchIn(stem) &&
-        pathSegments.any { it.contains("season") || it.contains("series") || it.contains("tv") || it.contains("anime") }
-    return tvEpisodeNamePattern.containsMatchIn(stem) ||
-        numberedEpisode ||
-        pathSegments.any { segment -> tvFolderPattern.matches(segment) }
-}
-
-
 @Composable
 private fun ResumePlaybackPill(
     backdrop: Backdrop,
@@ -1607,7 +1589,3 @@ private fun ResumePlaybackPill(
         }
     }
 }
-
-private val nonMovieFolderPattern = Regex(
-    """(?i)^(?:dcim|camera|screenshots?|screen[ ._-]*recordings?|screenrecordings?|recordings?|whatsapp(?:[ ._-]*videos?)?|telegram(?:[ ._-]*videos?)?|instagram|reels?|shorts?|clips?|statuses?|memes?)$"""
-)
