@@ -7,6 +7,7 @@ import android.content.Intent
 import android.widget.Toast
 import android.media.MediaMetadataRetriever
 import android.util.Size
+import android.util.LruCache
 import android.view.HapticFeedbackConstants
 import android.os.Build
 import android.text.format.Formatter
@@ -139,6 +140,8 @@ import com.tejas.liquidplayer.data.RenameNameError
 import com.tejas.liquidplayer.data.buildRenameFileName
 import com.tejas.liquidplayer.data.sortVideosAscending
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.text.DateFormat
@@ -974,6 +977,68 @@ private fun SettingsActionSection(title: String, items: List<ActionItem>) {
     }
 }
 
+private object VideoThumbnailLoader {
+    private const val WIDTH_PX = 320
+    private const val HEIGHT_PX = 180
+    private val decodeSemaphore = Semaphore(3)
+    private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
+
+    suspend fun load(context: android.content.Context, item: VideoItem): Bitmap? {
+        val key = cacheKey(item)
+        cache.get(key)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            decodeSemaphore.withPermit {
+                cache.get(key) ?: decodeAtTenPercent(context, item)?.also { bitmap ->
+                    cache.put(key, bitmap)
+                }
+            }
+        }
+    }
+
+    private fun cacheKey(item: VideoItem): String =
+        "${item.uri}|${item.durationMs}|${item.sizeBytes}"
+
+    private fun decodeAtTenPercent(context: android.content.Context, item: VideoItem): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, item.uri)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: item.durationMs
+            // Keep the existing design choice: use a frame at 10% of the video, not an arbitrary poster.
+            val frameTimeUs = durationMs.coerceAtLeast(0L) * 100L
+            val decoded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    WIDTH_PX,
+                    HEIGHT_PX
+                )
+            } else {
+                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?.let { frame ->
+                        Bitmap.createScaledBitmap(frame, WIDTH_PX, HEIGHT_PX, true).also { scaled ->
+                            if (scaled !== frame && !frame.isRecycled) frame.recycle()
+                        }
+                    }
+            }
+            decoded ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                runCatching {
+                    context.contentResolver.loadThumbnail(item.uri, Size(WIDTH_PX, HEIGHT_PX), null)
+                }.getOrNull()
+            } else null
+        } catch (_: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                runCatching {
+                    context.contentResolver.loadThumbnail(item.uri, Size(WIDTH_PX, HEIGHT_PX), null)
+                }.getOrNull()
+            } else null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VideoRow(
@@ -983,18 +1048,8 @@ private fun VideoRow(
     onRequestActions: (VideoItem) -> Unit
 ) {
     val context = LocalContext.current
-    val thumbnail by produceState<Bitmap?>(initialValue = null, item.uri) {
-        value = withContext(Dispatchers.IO) {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(context, item.uri)
-                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: item.durationMs
-                retriever.getFrameAtTime(duration.coerceAtLeast(0L) * 100L, MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: if (Build.VERSION.SDK_INT >= 29) runCatching { context.contentResolver.loadThumbnail(item.uri, Size(320, 180), null) }.getOrNull() else null
-            } catch (_: Exception) {
-                if (Build.VERSION.SDK_INT >= 29) runCatching { context.contentResolver.loadThumbnail(item.uri, Size(320, 180), null) }.getOrNull() else null
-            } finally { runCatching { retriever.release() } }
-        }
+    val thumbnail by produceState<Bitmap?>(initialValue = VideoThumbnailLoader.load(context, item), item.uri, item.durationMs, item.sizeBytes) {
+        value = VideoThumbnailLoader.load(context, item)
     }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
     val progress = remember(item.uri, item.durationMs, preferences) {
