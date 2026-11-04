@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="rename_error_empty">Enter a file name.</string>
+    <string name="rename_error_invalid_character">A file name cannot contain / or a null character.</string>
+    <string name="rename_error_too_long">The file name must be 255 UTF-8 bytes or fewer.</string>
+</resources>

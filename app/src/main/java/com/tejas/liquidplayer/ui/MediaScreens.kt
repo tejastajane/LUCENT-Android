@@ -111,6 +111,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -129,6 +130,9 @@ import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
 import com.tejas.liquidplayer.data.PlaybackPrefs
+import com.tejas.liquidplayer.R
+import com.tejas.liquidplayer.data.RenameNameError
+import com.tejas.liquidplayer.data.buildRenameFileName
 import com.tejas.liquidplayer.data.sortVideosAscending
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -212,12 +216,13 @@ fun MainLibraryUi(
         }
     }
 
-    BackHandler(enabled = selectedTab != 0 || searchExpanded || activeOverlay != null) {
+    BackHandler(enabled = selectedTab != 0 || selectedFolder != null || searchExpanded || activeOverlay != null) {
         when (val overlay = activeOverlay) {
             is LibraryOverlayState.Message -> overlay.onCancel()
             is LibraryOverlayState.RenameVideo, is LibraryOverlayState.VideoActions -> activeOverlay = null
             null -> when {
                 searchExpanded -> { searchExpanded = false; searchQuery = "" }
+                selectedFolder != null -> { selectedFolder = null }
                 selectedTab != 0 -> { selectedFolder = null; onTabSelected(0) }
             }
         }
@@ -1090,6 +1095,7 @@ private fun KyantRenameDialog(
     val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val foreground = if (light) Color.Black else Color.White
     var value by remember(item.uri, item.name) { mutableStateOf(item.name) }
+    var validationError by remember(item.uri, item.name) { mutableStateOf<RenameNameError?>(null) }
     KyantDialogCard(
         backdrop, "Rename video", onDismissRequest,
         content = {
@@ -1097,13 +1103,29 @@ private fun KyantRenameDialog(
                 Text("File name", color = foreground.copy(alpha = 0.68f), style = MaterialTheme.typography.labelMedium)
                 BasicTextField(
                     value = value,
-                    onValueChange = { value = it },
+                    onValueChange = {
+                        value = it
+                        validationError = null
+                    },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = foreground),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         .background(if (light) Color.Black.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
                         .padding(horizontal = 14.dp, vertical = 14.dp)
                 )
+                validationError?.let { error ->
+                    val message = when (error) {
+                        RenameNameError.Empty -> stringResource(R.string.rename_error_empty)
+                        RenameNameError.InvalidCharacter -> stringResource(R.string.rename_error_invalid_character)
+                        RenameNameError.TooLong -> stringResource(R.string.rename_error_too_long)
+                    }
+                    Text(
+                        message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         },
         actions = {
@@ -1111,10 +1133,12 @@ private fun KyantRenameDialog(
             KyantButton(
                 "Save", true, light,
                 onClick = {
-                    val requested = value.trim()
-                    if (requested.isNotBlank()) {
-                        val ext = item.name.substringAfterLast('.', "")
-                        onSave(item, if (ext.isNotBlank() && !requested.contains('.')) "$requested.$ext" else requested)
+                    val result = buildRenameFileName(item.name, value)
+                    if (result.error == null && result.fileName != null) {
+                        validationError = null
+                        onSave(item, result.fileName)
+                    } else {
+                        validationError = result.error
                     }
                 },
                 modifier = Modifier.weight(1f)

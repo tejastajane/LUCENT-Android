@@ -220,7 +220,12 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
                 cachedPlaybackFile?.delete()
                 cachedPlaybackFile = cached
                 Log.i("LiquidPlayer/VLC", "Retrying playback from a bounded local cache copy")
-                player.play(Media(libVlc, cached.absolutePath))
+                val retryMedia = Media(libVlc, cached.absolutePath)
+                try {
+                    player.play(retryMedia)
+                } finally {
+                    retryMedia.release()
+                }
                 null
             } catch (error: Exception) {
                 cached.delete()
