@@ -27,7 +27,7 @@ LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combine
 
 **[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk)**
 
-The URL above always resolves to the APK attached to the latest GitHub Release. After the persistent signing secrets are configured, successful builds from `main` publish this release automatically. The workflow keeps the signing key private in GitHub Actions secrets and verifies its certificate fingerprint before publishing. Branch and pull-request builds remain available as temporary Actions artifacts. The first install signed with the new persistent key may require removing an older debug-signed build once; updates after that will use the same signing identity.
+The URL above always resolves to the APK attached to the latest GitHub Release. After the persistent signing secrets are configured, successful builds from `main` publish this release automatically. The workflow keeps the signing key private in GitHub Actions secrets and verifies its certificate fingerprint before publishing. Branch and pull-request builds remain available as temporary Actions artifacts.
 
 To install, download the APK on your Android device and open it. Android may ask you to allow installation from the browser or file manager you used.
 
