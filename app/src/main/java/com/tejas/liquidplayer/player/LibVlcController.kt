@@ -1,3 +1,10 @@
+internal fun cleanupOrphanedVlcRetryCache(cacheDirectory: java.io.File): Int {
+    val retryFiles = cacheDirectory.listFiles { file ->
+        file.isFile && file.name.startsWith("lucent-vlc-retry-")
+    } ?: return 0
+    return retryFiles.count { file -> runCatching { file.delete() }.getOrDefault(false) }
+}
+
 package com.tejas.liquidplayer.player
 
 import android.content.Context
@@ -25,6 +32,11 @@ import org.videolan.libvlc.util.VLCVideoLayout
  */
 class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     private val appContext = context.applicationContext
+
+    init {
+        cleanupOrphanedVlcRetryCache(appContext.cacheDir)
+    }
+
     private val libVlc = LibVLC(
         appContext,
         arrayListOf(
