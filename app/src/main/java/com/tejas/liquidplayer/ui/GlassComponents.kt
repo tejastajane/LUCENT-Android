@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -48,6 +49,7 @@ fun GlassSurface(
     navMaterial: Boolean = false,
     flatNavMaterial: Boolean = false,
     clampNavLensToSurfaceHeight: Boolean = false,
+    dropShadowElevation: Dp = 0.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
     val isLightSurface = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -58,8 +60,17 @@ fun GlassSurface(
         Color.White.copy(alpha = 0.055f)
     }
     val shape = RoundedCornerShape(cornerRadius)
+    val surfaceModifier = if (dropShadowElevation > 0.dp) {
+        Modifier.shadow(
+            elevation = dropShadowElevation,
+            shape = shape,
+            clip = false
+        ).then(modifier)
+    } else {
+        modifier
+    }
     Box(
-        modifier.drawBackdrop(
+        surfaceModifier.drawBackdrop(
             backdrop = backdrop,
             shape = { shape },
             effects = {

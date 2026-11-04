@@ -162,13 +162,8 @@ fun LiquidPlayerApp(
         ActivityResultContracts.StartActivityForResult()
     ) {
         hasMediaManagementAccess = canManageMedia(context)
-        if (!hasMediaManagementAccess && pendingDeleteAfterMediaAccess != null) {
+        if (!hasMediaManagementAccess) {
             pendingDeleteAfterMediaAccess = null
-            Toast.makeText(
-                context,
-                "LUCENT needs media management access before it can delete videos.",
-                Toast.LENGTH_LONG
-            ).show()
         }
     }
 
@@ -227,10 +222,16 @@ fun LiquidPlayerApp(
                             mediaRefreshToken++
                         }
                         is MediaMutationOutcome.NeedsApproval -> {
-                            pendingMediaMutation = mutation
-                            mediaMutationLauncher.launch(
-                                IntentSenderRequest.Builder(outcome.intentSender).build()
-                            )
+                            // Android 12+ has already granted MANAGE_MEDIA. Do not re-open
+                            // Android's per-file delete-consent sheet from this fallback path.
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                Toast.makeText(context, "Couldn't delete this video.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                pendingMediaMutation = mutation
+                                mediaMutationLauncher.launch(
+                                    IntentSenderRequest.Builder(outcome.intentSender).build()
+                                )
+                            }
                         }
                         is MediaMutationOutcome.Failure -> {
                             Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()

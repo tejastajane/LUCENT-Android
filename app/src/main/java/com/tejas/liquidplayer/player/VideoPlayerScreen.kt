@@ -184,6 +184,8 @@ import org.videolan.libvlc.util.VLCVideoLayout
 
 private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed, Bookmarks, Information }
 
+private const val PLAYER_FEEDBACK_BACKGROUND_ALPHA = 0.34f
+
 @Composable
 fun VideoPlayerScreen(
     video: VideoItem,
@@ -427,7 +429,7 @@ private fun VideoPlayerScreenContent(
     var seekStartPositionMs by remember(video.uri) { mutableLongStateOf(savedPositionMs) }
     var lastSeekDispatchAtMs by remember(video.uri) { mutableLongStateOf(0L) }
     var swipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
-    var swipeSeekPreviewPoint by remember(video.uri) { mutableStateOf(Offset.Zero) }
+    var completedSwipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
     var showSwipeSeekHint by remember(video.uri) { mutableStateOf(false) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
@@ -553,6 +555,12 @@ private fun VideoPlayerScreenContent(
             delay(750L)
             seekFeedbackDirection = 0
             seekFeedbackAmountMs = 0L
+        }
+    }
+    LaunchedEffect(completedSwipeSeekPreview) {
+        if (completedSwipeSeekPreview != null) {
+            delay(750L)
+            completedSwipeSeekPreview = null
         }
     }
     LaunchedEffect(showAspectRatioFeedback) {
@@ -1053,6 +1061,9 @@ private fun VideoPlayerScreenContent(
                                 accumulatedDragDistance = Offset.Zero
                                 adjustmentMode = 0
                                 swipeSeekPreview = null
+                                completedSwipeSeekPreview = null
+                                seekFeedbackDirection = 0
+                                seekFeedbackAmountMs = 0L
                                 controlsInteractionToken++
                             },
                             onDragEnd = {
@@ -1062,9 +1073,7 @@ private fun VideoPlayerScreenContent(
                                             if (preview.deltaMs != 0L) {
                                                 controller.seekTo(preview.targetPositionMs)
                                                 positionMs = preview.targetPositionMs
-                                                seekFeedbackDirection = if (preview.deltaMs > 0L) 1 else -1
-                                                seekFeedbackAmountMs = abs(preview.deltaMs)
-                                                seekFeedbackToken++
+                                                completedSwipeSeekPreview = preview
                                             }
                                         }
                                         swipeSeekPreview = null
@@ -1077,12 +1086,13 @@ private fun VideoPlayerScreenContent(
                             },
                             onDragCancel = {
                                 swipeSeekPreview = null
+                                completedSwipeSeekPreview = null
                                 if (dragAxis == 2) {
                                     syncVolumeAfterDrag()
                                     persistBrightnessAfterDrag()
                                 }
                             },
-                            onDrag = { change, dragAmount ->
+                            onDrag = { _, dragAmount ->
                                 accumulatedDragDistance += dragAmount
                                 if (dragAxis == 0) {
                                     when (
@@ -1129,7 +1139,6 @@ private fun VideoPlayerScreenContent(
                                             surfaceWidthPx = size.width.toFloat()
                                         )
                                         swipeSeekPreview = HorizontalSeekPreview(seekStartMs, seekTargetMs)
-                                        swipeSeekPreviewPoint = change.position
                                         controlsInteractionToken++
                                     }
                                     2 -> {
@@ -1178,18 +1187,11 @@ private fun VideoPlayerScreenContent(
             )
         }
 
-        swipeSeekPreview?.takeIf { !isInPictureInPictureMode }?.let { preview ->
-            val density = LocalDensity.current
-            val previewX = (
-                with(density) { swipeSeekPreviewPoint.x.toDp() } - 84.dp
-            ).coerceIn(12.dp, (screenWidth - 168.dp).coerceAtLeast(12.dp))
-            val previewY = (
-                with(density) { swipeSeekPreviewPoint.y.toDp() } - 88.dp
-            ).coerceIn(80.dp, (maxHeight - 180.dp).coerceAtLeast(80.dp))
+        (swipeSeekPreview ?: completedSwipeSeekPreview)?.takeIf { !isInPictureInPictureMode }?.let { preview ->
             Column(
-                Modifier.offset(x = previewX, y = previewY)
+                Modifier.align(Alignment.Center)
                     .clip(RoundedCornerShape(22.dp))
-                    .background(Color.Black.copy(alpha = 0.76f))
+                    .background(Color.Black.copy(alpha = PLAYER_FEEDBACK_BACKGROUND_ALPHA))
                     .padding(horizontal = 22.dp, vertical = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -1251,7 +1253,7 @@ private fun VideoPlayerScreenContent(
         }
         if (showAspectRatioFeedback && !isInPictureInPictureMode) {
             Box(Modifier.align(Alignment.Center)) {
-                Text("Aspect ratio · ${aspectRatios[selectedAspectIndex].first}", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(Color.Black.copy(alpha = 0.78f)).padding(horizontal = 18.dp, vertical = 10.dp))
+                Text("Aspect ratio · ${aspectRatios[selectedAspectIndex].first}", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(Color.Black.copy(alpha = PLAYER_FEEDBACK_BACKGROUND_ALPHA)).padding(horizontal = 18.dp, vertical = 10.dp))
             }
         }
 

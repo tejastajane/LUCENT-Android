@@ -99,6 +99,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
@@ -227,8 +228,8 @@ fun MainLibraryUi(
     LaunchedEffect(showMediaManagementOnboarding) {
         if (showMediaManagementOnboarding && activeOverlay == null) {
             activeOverlay = LibraryOverlayState.Message(
-                title = "Manage your media",
-                message = "Allow LUCENT to manage videos on your device. This lets LUCENT delete a video after its own confirmation, without an additional Android confirmation. Android opens the media management settings page once so you can grant access.",
+                title = "Manage media access",
+                message = "Allow LUCENT to manage media?",
                 confirmLabel = "Continue",
                 cancelLabel = "Not now",
                 onConfirm = {
@@ -1463,7 +1464,8 @@ private fun BottomNavigation(
                 onTabSelected = onTabSelected,
                 backdrop = backdrop,
                 tabsCount = navItems.size,
-                modifier = Modifier.width(tabsWidth).height(tabsHeight),
+                modifier = Modifier.width(tabsWidth).height(tabsHeight)
+                    .shadow(12.dp, RoundedCornerShape(50.dp), clip = false),
                 collapseProgress = collapseProgress,
                 activeContent = { index ->
                     val (icon, label) = navItems[index.coerceIn(0, navItems.lastIndex)]
@@ -1529,7 +1531,8 @@ private fun BottomNavigation(
                 modifier = searchModifier,
                 cornerRadius = 50.dp,
                 surfaceAlpha = 0.055f,
-                navMaterial = true
+                navMaterial = true,
+                dropShadowElevation = 12.dp
             ) {
                 AnimatedContent(
                     targetState = searchExpanded,

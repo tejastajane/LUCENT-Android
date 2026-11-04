@@ -22,6 +22,12 @@ class PlayerGestureMathTest {
     }
 
     @Test
+    fun moderateSwipeHasMoreResponsiveSeekGain() {
+        // A 20%-width swipe on a 10-minute video seeks about 4.2 seconds.
+        assertEquals(64_200L, horizontalSeekTargetMs(60_000L, 600_000L, 80f, 400f))
+    }
+
+    @Test
     fun shortPrecisionSwipesHaveLowerGainThanLongDrags() {
         val shortTarget = horizontalSeekTargetMs(100_000L, 7_200_000L, 40f, 400f)
         val longTarget = horizontalSeekTargetMs(100_000L, 7_200_000L, 400f, 400f)
