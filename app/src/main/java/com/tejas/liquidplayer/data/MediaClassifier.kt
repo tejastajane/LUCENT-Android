@@ -1,5 +1,7 @@
 package com.tejas.liquidplayer.data
 
+import java.util.Locale
+
 internal enum class MediaCategory(val storageValue: String) {
     Movie("movie"),
     TvShow("tv_show"),
@@ -105,10 +107,10 @@ internal object MediaClassifier {
         // Four-digit release years are not treated as episode sequence numbers.
         if (episodeNumber in 1900..2099) return null
         val stem = withoutAnnotations.substring(0, suffix.range.first)
-            .let(separatorsPattern::replace(_, " "))
-            .let(whitespacePattern::replace(_, " "))
+            .let { separatorsPattern.replace(it, " ") }
+            .let { whitespacePattern.replace(it, " ") }
             .trim()
-            .lowercase()
+            .lowercase(Locale.ROOT)
         if (stem.length < 2) return null
         return NumberedSibling(item.folderIdentity, stem, episodeNumber)
     }
