@@ -832,12 +832,8 @@ private fun SettingsScreen(
                             listOf(
                                 ActionItem(
                                     Icons.Default.Delete,
-                                    "Direct media deletion",
-                                    if (hasMediaManagementAccess) {
-                                        "Enabled — LUCENT confirmation only"
-                                    } else {
-                                        "Grant once for LUCENT-only delete confirmation"
-                                    },
+                                    "Manage media access",
+                                    if (hasMediaManagementAccess) "Enabled" else "Not enabled",
                                     onManageMediaAccess
                                 )
                             )

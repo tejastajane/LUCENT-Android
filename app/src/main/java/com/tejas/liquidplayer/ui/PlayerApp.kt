@@ -234,7 +234,12 @@ fun LiquidPlayerApp(
                             }
                         }
                         is MediaMutationOutcome.Failure -> {
-                            Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show()
+                            val message = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                "Couldn't delete this video."
+                            } else {
+                                outcome.message
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                         }
                     }
                     return
