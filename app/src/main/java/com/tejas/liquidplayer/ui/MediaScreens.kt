@@ -176,6 +176,7 @@ fun MainLibraryUi(
     onGesturesEnabledChanged: (Boolean) -> Unit,
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
+    onPullToRefresh: () -> Unit,
     onRescan: () -> Unit
 ) {
     val backdrop = rememberLayerBackdrop()
@@ -238,7 +239,7 @@ fun MainLibraryUi(
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(MaterialTheme.colorScheme.background)) {
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
-                onRefresh = onRescan,
+                onRefresh = onPullToRefresh,
                 modifier = Modifier.fillMaxSize().statusBarsPadding()
             ) {
                 Column(Modifier.fillMaxSize()) {

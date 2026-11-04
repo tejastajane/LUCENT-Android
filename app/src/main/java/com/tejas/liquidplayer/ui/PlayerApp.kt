@@ -6,11 +6,14 @@ import android.app.RecoverableSecurityException
 import android.content.ContentValues
 import android.widget.Toast
 import android.content.Intent
+import android.database.ContentObserver
 import android.provider.MediaStore
 import android.provider.Settings
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,6 +64,7 @@ fun LiquidPlayerApp(
 
     var videos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var mediaRefreshToken by remember { mutableIntStateOf(0) }
+    var favouriteVersion by remember { mutableIntStateOf(0) }
     var isRefreshing by remember { mutableStateOf(false) }
     var hasMediaScanError by remember { mutableStateOf(false) }
     var hasVideoPermission by remember { mutableStateOf(hasMediaPermission(context)) }
@@ -340,14 +344,60 @@ fun LiquidPlayerApp(
     androidx.compose.runtime.DisposableEffect(lifecycleOwner, context) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                hasVideoPermission = hasMediaPermission(context)
+                val currentPermission = hasMediaPermission(context)
+                val permissionChanged = currentPermission != hasVideoPermission
+                hasVideoPermission = currentPermission
                 hasMediaManagementAccess = canManageMedia(context)
-                // Android 14+ selected-media grants can change in Settings while this app is backgrounded.
-                mediaRefreshToken++
+
+                // Android 14 partial-library grants can change while Settings is open even
+                // though the permission itself remains granted.
+                val partialMediaAccess = Build.VERSION.SDK_INT >= 34 &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+                if (permissionChanged || partialMediaAccess) mediaRefreshToken++
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // MediaStore change notifications replace unconditional full-library scans on every
+    // resume. Coalesce bursts (copy, rename, delete) into a single refresh.
+    androidx.compose.runtime.DisposableEffect(context) {
+        val handler = Handler(Looper.getMainLooper())
+        var pendingRefresh: Runnable? = null
+        val observer = object : ContentObserver(handler) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                pendingRefresh?.let(handler::removeCallbacks)
+                val refresh = Runnable { mediaRefreshToken++ }
+                pendingRefresh = refresh
+                handler.postDelayed(refresh, 400L)
+            }
+        }
+        context.contentResolver.registerContentObserver(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            true,
+            observer
+        )
+        onDispose {
+            context.contentResolver.unregisterContentObserver(observer)
+            pendingRefresh?.let(handler::removeCallbacks)
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(playerPreferences) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key?.startsWith("favourite_") == true) favouriteVersion++
+        }
+        playerPreferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { playerPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    val favouriteUris = remember(videos, favouriteVersion, playerPreferences) {
+        videos.asSequence()
+            .filter { item -> PlaybackPrefs.readFavourite(playerPreferences, item.uri.toString()) }
+            .map { it.uri.toString() }
+            .toSet()
     }
 
     val documentPicker = rememberLauncherForActivityResult(
@@ -377,7 +427,6 @@ fun LiquidPlayerApp(
     }
 
     LaunchedEffect(hasVideoPermission, mediaRefreshToken) {
-        if (mediaRefreshToken > 0) isRefreshing = true
         try {
             if (!hasVideoPermission) {
                 videos = emptyList()
@@ -448,16 +497,7 @@ fun LiquidPlayerApp(
             onMediaManagementOnboardingHandled = ::finishMediaManagementOnboarding,
             isRefreshing = isRefreshing,
             hasMediaScanError = hasMediaScanError,
-            favouriteUris = videos.asSequence()
-                .filter { item ->
-                    val uriString = item.uri.toString()
-                    playerPreferences.getBoolean(
-                        "favourite_${mediaPreferenceId(uriString)}",
-                        playerPreferences.getBoolean("favourite_${uriString.hashCode()}", false)
-                    )
-                }
-                .map { it.uri.toString() }
-                .toSet(),
+            favouriteUris = favouriteUris,
             onRequestMediaPermission = {
                 val permissions = when {
                     Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -497,6 +537,11 @@ fun LiquidPlayerApp(
             },
             isDarkTheme = isDarkTheme,
             onThemeChanged = onThemeChanged,
+            onPullToRefresh = {
+                hasVideoPermission = hasMediaPermission(context)
+                isRefreshing = true
+                mediaRefreshToken++
+            },
             onRescan = {
                 hasVideoPermission = hasMediaPermission(context)
                 mediaRefreshToken++

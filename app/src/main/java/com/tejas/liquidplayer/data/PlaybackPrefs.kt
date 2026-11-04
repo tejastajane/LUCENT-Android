@@ -18,6 +18,12 @@ internal object PlaybackPrefs {
     fun legacyKey(prefix: String, uriString: String): String = prefix + uriString.hashCode()
 
     fun playbackPositionKey(uriString: String): String = key("playback_position_", uriString)
+
+    fun readFavourite(preferences: SharedPreferences, uriString: String): Boolean {
+        val currentKey = key("favourite_", uriString)
+        if (preferences.contains(currentKey)) return preferences.getBoolean(currentKey, false)
+        return preferences.getBoolean(legacyKey("favourite_", uriString), false)
+    }
     fun legacyPlaybackPositionKey(uriString: String): String = legacyKey("playback_position_", uriString)
 
     fun readPlaybackPosition(preferences: SharedPreferences, uriString: String, defaultValue: Long = 0L): Long {
