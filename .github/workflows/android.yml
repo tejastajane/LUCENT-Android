@@ -167,9 +167,9 @@ jobs:
 
           This APK uses the persistent LUCENT signing identity. Future releases signed with this same key can update it in place."
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --clobber
-            gh release edit "$tag" --title "$release_title" --notes "$release_notes" --latest
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --title "$release_title" --notes "$release_notes" --latest --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --title "$release_title" --notes "$release_notes" --latest --target "$GITHUB_SHA"
+            gh release create "$tag" distributions/lucent.apk distributions/lucent.apk.sha256 --title "$release_title" --notes "$release_notes" --latest --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
           fi
