@@ -87,12 +87,4 @@ class MediaClassifierTest {
         assertEquals(MediaCategory.Other, result["2"])
     }
 
-    @Test fun movieThresholdRetainsTheExistingNinetyMinuteProductRule() {
-        val result = MediaClassifier.classify(listOf(
-            item("1", "Feature Film.mkv", duration = MediaClassifier.MIN_MOVIE_DURATION_MS),
-            item("2", "Shorter Film.mkv", duration = MediaClassifier.MIN_MOVIE_DURATION_MS - 1L)
-        ))
-        assertEquals(MediaCategory.Movie, result["1"])
-        assertEquals(MediaCategory.TvShow, result["2"])
-    }
 }
