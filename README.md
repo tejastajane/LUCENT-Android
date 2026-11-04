@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk"><strong>Download latest APK</strong></a>
+  <a href="https://github.com/tejastajane/LUCENT-Android/actions/runs/41836989693"><strong>Download latest APK</strong></a>
   ·
   <a href="https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml">Build workflow</a>
   ·
@@ -21,13 +21,13 @@
 
 LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combines libVLC playback with a custom, neutral Liquid Glass interface designed around translucent surfaces, backdrop blur, and lens refraction.
 
-> **Project status:** Active development. Branch builds produce testing APK artifacts. The public latest-APK release is updated only by a main-branch APK signed with LUCENT's configured persistent signing key and verified certificate fingerprint; it is not a Play Store release.
+> **Project status:** Active development. Main-branch builds produce testing APK artifacts when stable release signing is not configured. The temporary download link below opens the latest available build run; it is not a Play Store release.
 
 ## Download
 
-**[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk)**
+**[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/actions/runs/41836989693)**
 
-The link points to the latest successfully published, persistently signed main-branch APK. Builds without the signing secrets remain downloadable as workflow artifacts and do not replace the public latest release.
+**Temporary build #330:** [Open its GitHub Actions run and download the `lucent-apk` artifact](https://github.com/tejastajane/LUCENT-Android/actions/runs/41836989693). Download the artifact ZIP, extract it, then install `lucent.apk` on your Android device. This Actions artifact is retained for 14 days and this pinned link will not automatically move when another build runs. The usual stable Release download will resume working after persistent release signing is configured.
 
 To install, download the APK on your Android device and open it. Android may ask you to allow installation from the browser or file manager you used.
 
