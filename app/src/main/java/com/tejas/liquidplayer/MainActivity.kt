@@ -19,6 +19,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.tejas.liquidplayer.ui.LiquidPlayerApp
 import com.tejas.liquidplayer.ui.LiquidPlayerTheme
 
+internal fun shouldCaptureIncomingVideo(
+    hasSavedInstanceState: Boolean,
+    launchedFromHistory: Boolean
+): Boolean = !hasSavedInstanceState && !launchedFromHistory
+
 class MainActivity : ComponentActivity() {
     private var pipMode by mutableStateOf(false)
     private var incomingVideoUri by mutableStateOf<Uri?>(null)
@@ -34,7 +39,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        captureIncomingVideo(intent)
+        val launchedFromHistory = intent?.flags?.and(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (shouldCaptureIncomingVideo(savedInstanceState != null, launchedFromHistory)) {
+            captureIncomingVideo(intent)
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         val legacyPlayerPreferences = getSharedPreferences("liquid_player", MODE_PRIVATE)
@@ -65,7 +73,13 @@ class MainActivity : ComponentActivity() {
                     isInPictureInPictureMode = inPip,
                     incomingVideoUri = incomingVideoUri,
                     incomingVideoRequestId = incomingVideoRequestId,
-                    onIncomingVideoConsumed = { incomingVideoUri = null }
+                    onIncomingVideoConsumed = {
+                        val consumedUri = incomingVideoUri
+                        incomingVideoUri = null
+                        if (intent?.data == consumedUri && intent?.action == Intent.ACTION_VIEW) {
+                            setIntent(Intent())
+                        }
+                    }
                 )
             }
         }
