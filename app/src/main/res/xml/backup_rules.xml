@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Playback history and document-provider URIs are device-local and may not survive restore. -->
+    <exclude domain="sharedpref" path="liquid_player.xml" />
+</full-backup-content>

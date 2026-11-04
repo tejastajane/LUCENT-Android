@@ -1,7 +1,9 @@
 package com.tejas.liquidplayer
 
 import android.content.res.Configuration
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -9,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
@@ -16,8 +19,15 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.tejas.liquidplayer.ui.LiquidPlayerApp
 import com.tejas.liquidplayer.ui.LiquidPlayerTheme
 
+internal fun shouldCaptureIncomingVideo(
+    hasSavedInstanceState: Boolean,
+    launchedFromHistory: Boolean
+): Boolean = !hasSavedInstanceState && !launchedFromHistory
+
 class MainActivity : ComponentActivity() {
     private var pipMode by mutableStateOf(false)
+    private var incomingVideoUri by mutableStateOf<Uri?>(null)
+    private var incomingVideoRequestId by mutableIntStateOf(0)
 
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
@@ -29,9 +39,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val launchedFromHistory = intent?.flags?.and(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (shouldCaptureIncomingVideo(savedInstanceState != null, launchedFromHistory)) {
+            captureIncomingVideo(intent)
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
-        val preferences = getSharedPreferences("liquid_player", MODE_PRIVATE)
+        val legacyPlayerPreferences = getSharedPreferences("liquid_player", MODE_PRIVATE)
+        val preferences = getSharedPreferences("lucent_settings", MODE_PRIVATE)
+        if (!preferences.contains("dark_theme") && legacyPlayerPreferences.contains("dark_theme")) {
+            preferences.edit()
+                .putBoolean("dark_theme", legacyPlayerPreferences.getBoolean("dark_theme", true))
+                .apply()
+        }
         setContent {
             val inPip = pipMode
             var isDarkTheme by rememberSaveable { mutableStateOf(preferences.getBoolean("dark_theme", true)) }
@@ -50,9 +70,31 @@ class MainActivity : ComponentActivity() {
                         isDarkTheme = dark
                         preferences.edit().putBoolean("dark_theme", dark).apply()
                     },
-                    isInPictureInPictureMode = inPip
+                    isInPictureInPictureMode = inPip,
+                    incomingVideoUri = incomingVideoUri,
+                    incomingVideoRequestId = incomingVideoRequestId,
+                    onIncomingVideoConsumed = {
+                        val consumedUri = incomingVideoUri
+                        incomingVideoUri = null
+                        if (intent?.data == consumedUri && intent?.action == Intent.ACTION_VIEW) {
+                            setIntent(Intent())
+                        }
+                    }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureIncomingVideo(intent)
+    }
+
+    private fun captureIncomingVideo(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            incomingVideoUri = intent.data
+            incomingVideoRequestId++
         }
     }
 }

@@ -3,16 +3,29 @@ package com.tejas.liquidplayer.player
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.Build
+import com.tejas.liquidplayer.R
 import android.provider.OpenableColumns
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 import com.tejas.liquidplayer.data.TrackOption
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
+
+internal fun cleanupOrphanedVlcRetryCache(cacheDirectory: java.io.File): Int {
+    val retryFiles = cacheDirectory.listFiles { file ->
+        file.isFile && file.name.startsWith("lucent-vlc-retry-")
+    } ?: return 0
+    return retryFiles.count { file -> runCatching { file.delete() }.getOrDefault(false) }
+}
 
 /**
  * Owns the libVLC native engine. Provider URIs are opened by Android and passed as
@@ -20,6 +33,11 @@ import org.videolan.libvlc.util.VLCVideoLayout
  */
 class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     private val appContext = context.applicationContext
+
+    init {
+        cleanupOrphanedVlcRetryCache(appContext.cacheDir)
+    }
+
     private val libVlc = LibVLC(
         appContext,
         arrayListOf(
@@ -34,6 +52,14 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     private var released = false
     private var contentDescriptor: ParcelFileDescriptor? = null
     private var cachedPlaybackFile: File? = null
+    private val cachedExternalSubtitleFiles = linkedSetOf<File>()
+
+    private companion object {
+        const val MAX_PROVIDER_CACHE_BYTES = 4L * 1024L * 1024L * 1024L
+        const val MIN_FREE_SPACE_RESERVE_BYTES = 256L * 1024L * 1024L
+        const val PROGRESS_UPDATE_INTERVAL_BYTES = 1024L * 1024L
+        const val MAX_EXTERNAL_SUBTITLE_CACHE_BYTES = 50L * 1024L * 1024L
+    }
 
     fun attach(layout: VLCVideoLayout) {
         if (!viewsAttached && !released) {
@@ -42,11 +68,18 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         }
     }
 
-    /** Returns null if playback was queued, or an error message for synchronous access failures. */
-    fun play(uri: Uri): String? {
+    /**
+     * Resolve and attach a media source without starting playback. This lets the UI prepare
+     * the video even when another app temporarily owns audio focus.
+     */
+    fun prepare(uri: Uri): String? {
         if (released) return "The player has already been closed."
         return try {
             runCatching { player.stop() }
+            // A reused MediaPlayer retains engine-level state unless it is reset here.
+            runCatching { player.setRate(1f) }
+            runCatching { player.setAspectRatio(null) }
+            runCatching { player.setSpuDelay(0L) }
             // Keep libVLC at unity gain; the Android media stream owns user volume.
             runCatching { player.volume = 100 }
             contentDescriptor?.close()
@@ -63,58 +96,138 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
                 "file" -> Media(libVlc, uri.path ?: error("The video file path is empty."))
                 else -> Media(libVlc, uri)
             }
-            player.play(media)
+            try {
+                player.setMedia(media)
+            } finally {
+                media.release()
+            }
             null
         } catch (error: Exception) {
             runCatching { contentDescriptor?.close() }
             contentDescriptor = null
-            Log.e("LiquidPlayer/VLC", "Unable to start media: $uri", error)
-            "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
+            Log.e("LiquidPlayer/VLC", "Unable to prepare media: $uri", error)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && uri.scheme.equals("file", ignoreCase = true)) {
+                appContext.getString(R.string.player_legacy_file_uri_error)
+            } else {
+                "Couldn't open this video: ${error.message ?: "Android could not provide readable media."}"
+            }
         }
     }
+
+    /** Start the media source previously attached by [prepare]. */
+    fun start(): String? {
+        if (released) return "The player has already been closed."
+        return try {
+            player.play()
+            null
+        } catch (error: Exception) {
+            Log.e("LiquidPlayer/VLC", "Unable to start prepared media", error)
+            "Couldn't start this video: ${error.message ?: "libVLC could not start playback."}"
+        }
+    }
+
+    /** Convenience path for callers that want to prepare and immediately start. */
+    fun play(uri: Uri): String? = prepare(uri) ?: start()
 
     /**
      * Retry a content-provider video from a seekable local cache file. Some Android document
      * providers expose a pipe or descriptor that libVLC cannot seek correctly; the copy is
      * created only after the direct-descriptor path fails, and is deleted when playback ends.
      */
-    suspend fun retryUsingCachedCopy(uri: Uri): String? {
+    suspend fun retryUsingCachedCopy(
+        uri: Uri,
+        onProgress: (copiedBytes: Long, expectedBytes: Long?) -> Unit = { _, _ -> }
+    ): String? {
         if (released) return "The player has already been closed."
         if (uri.scheme != "content") return "This video provider does not support a local-cache retry."
 
         val cached = try {
             withContext(Dispatchers.IO) {
-                val displayName = runCatching {
+                val metadata = runCatching {
                     appContext.contentResolver.query(
                         uri,
-                        arrayOf(OpenableColumns.DISPLAY_NAME),
+                        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
                         null,
                         null,
                         null
                     )?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                        if (!cursor.moveToFirst()) null else {
+                            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                            val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                            val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                                cursor.getLong(sizeIndex).takeIf { it > 0L }
+                            } else null
+                            name to size
+                        }
                     }
-                }.getOrNull().orEmpty()
+                }.getOrNull()
+                val displayName = metadata?.first.orEmpty()
+                val expectedBytes = metadata?.second
+
+                // Leave 256 MiB for the OS and app state, and never let a provider copy
+                // consume an unbounded amount of cache when size metadata is missing.
+                val freeSpace = appContext.cacheDir.usableSpace
+                val safeCapacity = minOf(
+                    MAX_PROVIDER_CACHE_BYTES,
+                    (freeSpace - MIN_FREE_SPACE_RESERVE_BYTES).coerceAtLeast(0L)
+                )
+                if (safeCapacity <= 0L) {
+                    error("There isn't enough free storage to safely retry this provider video.")
+                }
+                if (expectedBytes != null && expectedBytes > safeCapacity) {
+                    error("This provider video is too large to cache safely with the available free storage.")
+                }
+                val copyLimit = expectedBytes ?: safeCapacity
                 val extension = displayName.substringAfterLast('.', "")
                     .takeIf { it.length in 2..5 && it.all(Char::isLetterOrDigit) }
                 val file = File.createTempFile(
-                    "liquid-vlc-retry-",
+                    "lucent-vlc-retry-",
                     extension?.let { ".$it" } ?: ".media",
                     appContext.cacheDir
                 )
+                var completed = false
                 try {
                     val input = appContext.contentResolver.openInputStream(uri)
                         ?: error("Android could not open this video as a readable stream.")
+                    var copiedBytes = 0L
+                    var nextProgressBytes = 0L
                     input.use { stream ->
-                        file.outputStream().buffered().use { output -> stream.copyTo(output) }
+                        file.outputStream().buffered().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val read = stream.read(buffer)
+                                if (read < 0) break
+                                if (copiedBytes + read > copyLimit) {
+                                    error("The provider stream exceeded its reported size or safe cache limit.")
+                                }
+                                output.write(buffer, 0, read)
+                                copiedBytes += read
+                                if (copiedBytes >= nextProgressBytes) {
+                                    withContext(Dispatchers.Main.immediate) {
+                                        onProgress(copiedBytes, expectedBytes)
+                                    }
+                                    nextProgressBytes = copiedBytes + PROGRESS_UPDATE_INTERVAL_BYTES
+                                }
+                            }
+                        }
                     }
-                    if (file.length() == 0L) error("The selected video is empty.")
+                    if (copiedBytes == 0L) error("The selected video is empty.")
+                    if (expectedBytes != null && copiedBytes != expectedBytes) {
+                        error("The provider returned an incomplete video stream.")
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        onProgress(copiedBytes, expectedBytes)
+                    }
+                    completed = true
                     file
-                } catch (error: Exception) {
-                    file.delete()
-                    throw error
+                } finally {
+                    if (!completed) file.delete()
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             Log.e("LiquidPlayer/VLC", "Unable to cache provider video: $uri", error)
             return "Couldn't read this video from Android storage: ${error.message ?: "unknown provider error"}"
@@ -131,8 +244,13 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
                 contentDescriptor = null
                 cachedPlaybackFile?.delete()
                 cachedPlaybackFile = cached
-                Log.i("LiquidPlayer/VLC", "Retrying playback from a local cache copy")
-                player.play(Media(libVlc, cached.absolutePath))
+                Log.i("LiquidPlayer/VLC", "Retrying playback from a bounded local cache copy")
+                val retryMedia = Media(libVlc, cached.absolutePath)
+                try {
+                    player.play(retryMedia)
+                } finally {
+                    retryMedia.release()
+                }
                 null
             } catch (error: Exception) {
                 cached.delete()
@@ -187,8 +305,76 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
     fun selectSubtitleTrack(id: Int): Boolean =
         !released && runCatching { player.setSpuTrack(id) }.getOrDefault(false)
 
-    fun addExternalSubtitle(uri: Uri): Boolean =
-        !released && runCatching { player.addSlave(0, uri, true) }.getOrDefault(false)
+    suspend fun addExternalSubtitle(uri: Uri): Boolean {
+        if (released) return false
+        val cachedFile = if (uri.scheme.equals("content", ignoreCase = true)) {
+            try {
+                copyExternalSubtitleToCache(uri)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.e("LUCENT/VLC", "Unable to copy external subtitle into the VLC cache", error)
+                return false
+            }
+        } else {
+            null
+        }
+        val subtitleUri = cachedFile?.let(Uri::fromFile) ?: uri
+        val added = runCatching { player.addSlave(0, subtitleUri, true) }.getOrDefault(false)
+        if (added && cachedFile != null) {
+            cachedExternalSubtitleFiles += cachedFile
+        } else {
+            cachedFile?.delete()
+        }
+        return added
+    }
+
+    private suspend fun copyExternalSubtitleToCache(uri: Uri): File = withContext(Dispatchers.IO) {
+        val displayName = runCatching {
+            appContext.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) cursor.getString(index) else null
+                } else null
+            }
+        }.getOrNull().orEmpty()
+        val extension = displayName.substringAfterLast('.', "srt")
+            .lowercase()
+            .filter(Char::isLetterOrDigit)
+            .take(8)
+            .ifBlank { "srt" }
+        val destination = File(appContext.cacheDir, "lucent-subtitle-${UUID.randomUUID()}.$extension")
+        try {
+            val input = appContext.contentResolver.openInputStream(uri)
+                ?: error("Android returned no readable stream for this subtitle.")
+            input.use { source ->
+                destination.outputStream().buffered().use { target ->
+                    val buffer = ByteArray(8 * 1024)
+                    var copiedBytes = 0L
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        copiedBytes += count
+                        require(copiedBytes <= MAX_EXTERNAL_SUBTITLE_CACHE_BYTES) {
+                            "The subtitle file is larger than the supported 50 MiB cache limit."
+                        }
+                        target.write(buffer, 0, count)
+                    }
+                }
+            }
+            destination
+        } catch (error: Throwable) {
+            destination.delete()
+            throw error
+        }
+    }
 
     fun close() {
         if (released) return
@@ -201,6 +387,8 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         contentDescriptor = null
         runCatching { cachedPlaybackFile?.delete() }
         cachedPlaybackFile = null
+        cachedExternalSubtitleFiles.forEach { runCatching { it.delete() } }
+        cachedExternalSubtitleFiles.clear()
         runCatching { libVlc.release() }
     }
 }

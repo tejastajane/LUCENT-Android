@@ -7,6 +7,7 @@ import android.content.Intent
 import android.widget.Toast
 import android.media.MediaMetadataRetriever
 import android.util.Size
+import android.util.LruCache
 import android.view.HapticFeedbackConstants
 import android.os.Build
 import android.text.format.Formatter
@@ -16,8 +17,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
@@ -61,6 +60,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
@@ -74,7 +74,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -112,6 +111,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -129,8 +129,17 @@ import com.tejas.liquidplayer.ui.liquid.LiquidBottomTabs
 import com.tejas.liquidplayer.ui.liquid.LiquidToggle
 import com.tejas.liquidplayer.data.VideoItem
 import com.tejas.liquidplayer.data.formatDuration
+import com.tejas.liquidplayer.data.PlaybackPrefs
+import com.tejas.liquidplayer.data.MediaClassifier
+import com.tejas.liquidplayer.data.MediaClassifierInput
+import com.tejas.liquidplayer.data.MediaCategory
+import com.tejas.liquidplayer.R
+import com.tejas.liquidplayer.data.RenameNameError
+import com.tejas.liquidplayer.data.buildRenameFileName
 import com.tejas.liquidplayer.data.sortVideosAscending
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.text.DateFormat
@@ -147,6 +156,7 @@ private sealed interface LibraryOverlayState {
     ) : LibraryOverlayState
     data class RenameVideo(val item: VideoItem) : LibraryOverlayState
     data class VideoActions(val item: VideoItem) : LibraryOverlayState
+    data class CategoryOverride(val item: VideoItem) : LibraryOverlayState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,10 +166,14 @@ fun MainLibraryUi(
     onTabSelected: (Int) -> Unit,
     videos: List<VideoItem>,
     hasVideoPermission: Boolean,
+    hasMediaScanError: Boolean,
+    favouriteUris: Set<String>,
+    categoryOverrides: Map<String, MediaCategory>,
+    onSetCategoryOverride: (VideoItem, MediaCategory?) -> Unit,
     hasMediaManagementAccess: Boolean,
+    showMediaManagementOnboarding: Boolean,
+    onMediaManagementOnboardingHandled: () -> Unit,
     isRefreshing: Boolean,
-    showMediaManagementPrompt: Boolean,
-    onDismissMediaManagementPrompt: () -> Unit,
     onRequestMediaPermission: () -> Unit,
     onRequestMediaManagementAccess: () -> Unit,
     onPlay: (VideoItem) -> Unit,
@@ -174,6 +188,7 @@ fun MainLibraryUi(
     onGesturesEnabledChanged: (Boolean) -> Unit,
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
+    onPullToRefresh: () -> Unit,
     onRescan: () -> Unit
 ) {
     val backdrop = rememberLayerBackdrop()
@@ -182,33 +197,58 @@ fun MainLibraryUi(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var activeOverlay by remember { mutableStateOf<LibraryOverlayState?>(null) }
     val context = LocalContext.current
+    val automaticCategories = remember(videos) {
+        MediaClassifier.classify(
+            videos.map { item ->
+                MediaClassifierInput(
+                    uri = item.uri.toString(),
+                    name = item.name,
+                    folderIdentity = item.folderIdentity,
+                    durationMs = item.durationMs
+                )
+            }
+        )
+    }
+    val effectiveCategories = remember(videos, categoryOverrides, automaticCategories) {
+        videos.associate { item ->
+            val uri = item.uri.toString()
+            uri to (categoryOverrides[uri] ?: automaticCategories[uri] ?: MediaCategory.Other)
+        }
+    }
     val showMessage: (String, String) -> Unit = { title, message ->
         activeOverlay = LibraryOverlayState.Message(
             title = title, message = message, confirmLabel = "Done",
             onConfirm = { activeOverlay = null }, onCancel = { activeOverlay = null }
         )
     }
-    LaunchedEffect(showMediaManagementPrompt) {
-        if (showMediaManagementPrompt && activeOverlay == null) {
+
+    LaunchedEffect(showMediaManagementOnboarding) {
+        if (showMediaManagementOnboarding && activeOverlay == null) {
             activeOverlay = LibraryOverlayState.Message(
-                title = "Manage your media",
-                message = "Allow LUCENT to manage videos on your device. With this one-time access, Android won't ask for confirmation every time you delete a video. You can change this permission later in Settings.",
+                title = "Manage media access",
+                message = "Allow LUCENT to manage media?",
                 confirmLabel = "Continue",
                 cancelLabel = "Not now",
-                onConfirm = { activeOverlay = null; onRequestMediaManagementAccess() },
-                onCancel = { activeOverlay = null; onDismissMediaManagementPrompt() }
+                onConfirm = {
+                    activeOverlay = null
+                    onMediaManagementOnboardingHandled()
+                    onRequestMediaManagementAccess()
+                },
+                onCancel = {
+                    activeOverlay = null
+                    onMediaManagementOnboardingHandled()
+                }
             )
-        } else if (!showMediaManagementPrompt &&
-            (activeOverlay as? LibraryOverlayState.Message)?.title == "Manage your media"
-        ) activeOverlay = null
+        }
     }
 
-    BackHandler(enabled = selectedTab != 0 || searchExpanded || activeOverlay != null) {
+    BackHandler(enabled = selectedTab != 0 || selectedFolder != null || searchExpanded || activeOverlay != null) {
         when (val overlay = activeOverlay) {
             is LibraryOverlayState.Message -> overlay.onCancel()
-            is LibraryOverlayState.RenameVideo, is LibraryOverlayState.VideoActions -> activeOverlay = null
+            is LibraryOverlayState.RenameVideo, is LibraryOverlayState.VideoActions, is LibraryOverlayState.CategoryOverride -> activeOverlay = null
             null -> when {
                 searchExpanded -> { searchExpanded = false; searchQuery = "" }
+                selectedFolder != null -> { selectedFolder = null }
                 selectedTab != 0 -> { selectedFolder = null; onTabSelected(0) }
             }
         }
@@ -230,7 +270,7 @@ fun MainLibraryUi(
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(MaterialTheme.colorScheme.background)) {
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
-                onRefresh = onRescan,
+                onRefresh = onPullToRefresh,
                 modifier = Modifier.fillMaxSize().statusBarsPadding()
             ) {
                 Column(Modifier.fillMaxSize()) {
@@ -248,15 +288,25 @@ fun MainLibraryUi(
                     when (tab) {
                         0 -> VideosScreen(
                             backdrop = backdrop, videos = videos, hasPermission = hasVideoPermission,
+                            hasScanError = hasMediaScanError, favouriteUris = favouriteUris,
+                            effectiveCategories = effectiveCategories,
                             onRequestPermission = onRequestMediaPermission, selectedFolder = selectedFolder,
                             onClearFolder = { selectedFolder = null }, onPlay = onPlay,
                             onChooseVideoFile = onChooseVideoFile,
-                            onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) }
+                            onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) },
+                            onRescan = onRescan
                         )
-                        1 -> FoldersScreen(backdrop, videos, hasVideoPermission, onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) })
+                        1 -> FoldersScreen(
+                            backdrop, videos, hasVideoPermission,
+                            onFolderSelected = { folder -> selectedFolder = folder; onTabSelected(0) },
+                            onRescan = onRescan
+                        )
                         3 -> SearchResultsScreen(
                             backdrop = backdrop, videos = videos, query = searchQuery,
-                            hasPermission = hasVideoPermission, onRequestPermission = onRequestMediaPermission,
+                            hasPermission = hasVideoPermission,
+                            hasScanError = hasMediaScanError,
+                            onRequestPermission = onRequestMediaPermission,
+                            onRescan = onRescan,
                             onPlay = onPlay,
                             onRequestActions = { activeOverlay = LibraryOverlayState.VideoActions(it) }
                         )
@@ -281,8 +331,8 @@ fun MainLibraryUi(
         AnimatedVisibility(
             visible = recentVideo != null && showRecentPlayState.value && !searchExpanded,
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 108.dp),
-            enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { it * 2 },
-            exit = fadeOut(tween(130)) + slideOutVertically(tween(180)) { it * 3 }
+            enter = fadeIn(tween(160)),
+            exit = fadeOut(tween(130))
         ) {
             val item = recentVideo
             if (item != null) ResumePlaybackPill(
@@ -309,7 +359,12 @@ fun MainLibraryUi(
             is LibraryOverlayState.RenameVideo -> KyantRenameDialog(
                 backdrop, overlay.item,
                 onDismissRequest = { activeOverlay = null },
-                onSave = { item, name -> activeOverlay = null; onRenameVideo(item, name) }
+                onSave = { item, name ->
+                    activeOverlay = null
+                    // Start the platform mutation directly. Android presents its own approval
+                    // UI only when this URI and OS version require it.
+                    onRenameVideo(item, name)
+                }
             )
             is LibraryOverlayState.VideoActions -> KyantVideoActionSheet(
                 backdrop = backdrop,
@@ -333,7 +388,30 @@ fun MainLibraryUi(
                         .onFailure { Toast.makeText(context, "Unable to share this video.", Toast.LENGTH_SHORT).show() }
                     activeOverlay = null
                 },
-                onDelete = { activeOverlay = null; onDeleteVideo(overlay.item) }
+                onDelete = {
+                    val item = overlay.item
+                    activeOverlay = LibraryOverlayState.Message(
+                        title = "Delete video?",
+                        message = "\"${item.name}\" will be permanently deleted from this device. This action cannot be undone.",
+                        confirmLabel = "Delete",
+                        cancelLabel = "Cancel",
+                        onConfirm = {
+                            activeOverlay = null
+                            onDeleteVideo(item)
+                        },
+                        onCancel = { activeOverlay = null }
+                    )
+                },
+                onMoveToCategory = { activeOverlay = LibraryOverlayState.CategoryOverride(overlay.item) }
+            )
+            is LibraryOverlayState.CategoryOverride -> KyantCategoryDialog(
+                backdrop = backdrop,
+                currentCategory = effectiveCategories[overlay.item.uri.toString()] ?: MediaCategory.Other,
+                onDismissRequest = { activeOverlay = null },
+                onSave = { selectedCategory ->
+                    activeOverlay = null
+                    onSetCategoryOverride(overlay.item, selectedCategory)
+                }
             )
             null -> Unit
         }
@@ -346,7 +424,9 @@ private fun SearchResultsScreen(
     videos: List<VideoItem>,
     query: String,
     hasPermission: Boolean,
+    hasScanError: Boolean,
     onRequestPermission: () -> Unit,
+    onRescan: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onRequestActions: (VideoItem) -> Unit
 ) {
@@ -354,7 +434,17 @@ private fun SearchResultsScreen(
     Column(Modifier.fillMaxSize()) {
         Text("Search results", Modifier.padding(start = 22.dp, end = 18.dp, top = 14.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) EmptyState(backdrop, "Video permission needed", "Allow access to search local videos.", "Allow access", onRequestPermission)
-        else if (filtered.isEmpty()) EmptyState(backdrop, "No matches", "Try another title or folder name.", "No results", {})
+        else if (filtered.isEmpty()) EmptyState(
+            backdrop,
+            if (hasScanError) "Library scan failed" else "No matches",
+            if (hasScanError) {
+                "LUCENT couldn't refresh the video library. Scan again to retry."
+            } else {
+                "Try another title or folder name, or clear the search field above."
+            },
+            action = if (hasScanError) "Scan again" else null,
+            onAction = if (hasScanError) onRescan else null
+        )
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 176.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(filtered, key = { it.id }) { item -> VideoRow(backdrop, item, onClick = { onPlay(item) }, onRequestActions = onRequestActions) }
         }
@@ -371,28 +461,51 @@ private fun VideosScreen(
     onClearFolder: () -> Unit,
     onPlay: (VideoItem) -> Unit,
     onChooseVideoFile: () -> Unit,
-    onRequestActions: (VideoItem) -> Unit
+    onRequestActions: (VideoItem) -> Unit,
+    hasScanError: Boolean,
+    favouriteUris: Set<String>,
+    effectiveCategories: Map<String, MediaCategory>,
+    onRescan: () -> Unit
 ) {
     var category by rememberSaveable { mutableStateOf("All") }
-    // Recompute directly from the selected chip. TV detection uses both release
-    // naming conventions and media-store folder hierarchy, not only one regex.
-    val filtered = videos.filter { item ->
-        val name = item.name.lowercase(Locale.ROOT)
-        val pathSegments = item.relativePath.split('/').map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank)
-        val looksLikeTvEpisode = isLikelyTvEpisode(item.name, pathSegments)
-        val isAnime = pathSegments.any { it.contains("anime") } ||
-            listOf("anime", "jujutsu", "naruto", "one.piece", "bleach", "attack.on", "demon.slayer", "suzume", "spirited.away", "frieren", "ippo").any(name::contains)
-        val isNonMovieFolder = pathSegments.any { nonMovieFolderPattern.matches(it) }
-        val matchesCategory = when (category) {
-            "Movies" -> !looksLikeTvEpisode && !isAnime && !isNonMovieFolder && item.durationMs >= 90L * 60L * 1_000L
-            "TV Shows" -> looksLikeTvEpisode
-            "Anime" -> isAnime
-            "Latest" -> true
-            else -> true
+    val moviesLabel = stringResource(R.string.category_movies)
+    val tvShowsLabel = stringResource(R.string.category_tv_shows)
+    val animeLabel = stringResource(R.string.category_anime)
+    val otherLabel = stringResource(R.string.category_other)
+    val availableCategories = buildList {
+        add("All")
+        add("Latest")
+        add(moviesLabel)
+        add(tvShowsLabel)
+        if (effectiveCategories.values.any { it == MediaCategory.Anime } || category == animeLabel) add(animeLabel)
+        add("Favourites")
+        if (effectiveCategories.values.any { it == MediaCategory.Other } || category == otherLabel) add(otherLabel)
+    }
+    LaunchedEffect(availableCategories) {
+        if (category !in availableCategories) category = "All"
+    }
+    val filtered = remember(videos, category, selectedFolder, favouriteUris, effectiveCategories) {
+        videos.filter { item ->
+            val uri = item.uri.toString()
+            val itemCategory = effectiveCategories[uri] ?: MediaCategory.Other
+            val matchesCategory = when (category) {
+                moviesLabel -> itemCategory == MediaCategory.Movie
+                tvShowsLabel -> itemCategory == MediaCategory.TvShow
+                animeLabel -> itemCategory == MediaCategory.Anime
+                otherLabel -> itemCategory == MediaCategory.Other
+                "Favourites" -> uri in favouriteUris
+                "Latest", "All" -> true
+                else -> true
+            }
+            matchesCategory && (
+                selectedFolder == null ||
+                    item.folderIdentity == selectedFolder ||
+                    item.folderPath == selectedFolder
+            )
+        }.let { items ->
+            if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds)
+            else sortVideosAscending(items)
         }
-        matchesCategory && (selectedFolder.isNullOrBlank() || item.folderName == selectedFolder)
-    }.let { items ->
-        if (category == "Latest") items.sortedByDescending(VideoItem::dateAddedSeconds) else sortVideosAscending(items)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -402,9 +515,22 @@ private fun VideosScreen(
         ) {
             Text("Videos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         }
-        if (!selectedFolder.isNullOrBlank()) {
+        if (hasScanError && videos.isNotEmpty()) {
+            Text(
+                "Couldn't refresh the library. Showing the last available list.",
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        if (selectedFolder != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Folder: $selectedFolder", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                val selectedFolderPath = selectedFolder.substringAfter('|', selectedFolder)
+                Text(
+                    "Folder: ${selectedFolderPath.replace("/", " › ").ifBlank { "Internal storage" }}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(onClick = onClearFolder) { Text("Clear", color = MaterialTheme.colorScheme.onBackground) }
             }
         }
@@ -412,7 +538,7 @@ private fun VideosScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("All", "Latest", "Movies", "TV Shows", "Anime").forEach { label ->
+            availableCategories.forEach { label ->
                 FilterChip(
                     selected = category == label,
                     onClick = { category = label },
@@ -439,10 +565,32 @@ private fun VideosScreen(
         } else if (filtered.isEmpty()) {
             EmptyState(
                 backdrop,
-                title = if (videos.isEmpty()) "No videos found" else "Nothing matches",
-                message = if (videos.isEmpty()) "Videos on your device will appear here after a media scan." else "Try another filter or search term.",
-                action = "Choose a video file",
-                onAction = onChooseVideoFile
+                title = when {
+                    hasScanError -> "Library scan failed"
+                    category == "Favourites" -> "No favourites yet"
+                    category == animeLabel -> "No anime videos yet"
+                    category == otherLabel -> "No videos are currently classified as Other"
+                    videos.isEmpty() -> "No videos found"
+                    else -> "Nothing matches"
+                },
+                message = when {
+                    hasScanError -> "LUCENT couldn't read the video library. Scan again to retry."
+                    category == "Favourites" -> "Favourite a video from the player tools and it will appear here."
+                    category == animeLabel -> stringResource(R.string.category_anime_empty)
+                    category == otherLabel -> stringResource(R.string.category_other_empty)
+                    videos.isEmpty() -> "Videos on your device will appear here after a media scan."
+                    else -> "Try another filter or search term."
+                },
+                action = when {
+                    category == "Favourites" -> null
+                    hasScanError -> "Scan again"
+                    else -> "Choose a video file"
+                },
+                onAction = when {
+                    category == "Favourites" -> null
+                    hasScanError -> onRescan
+                    else -> onChooseVideoFile
+                }
             )
         } else {
             LazyColumn(
@@ -461,24 +609,43 @@ private fun FoldersScreen(
     backdrop: LayerBackdrop,
     videos: List<VideoItem>,
     hasPermission: Boolean,
-    onFolderSelected: (String) -> Unit
+    onFolderSelected: (String?) -> Unit,
+    onRescan: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         Text("Folder", Modifier.padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 18.dp), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         if (!hasPermission) {
-            EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected("") })
+            EmptyState(backdrop, title = "Video permission needed", message = "Allow access to group videos by their storage folders.", action = "Go to Videos", onAction = { onFolderSelected(null) })
         } else {
-            val folders = videos.groupBy { it.folderName }.toList().sortedBy { it.first.lowercase(Locale.ROOT) }
+            val folders = videos.groupBy { it.folderIdentity }
+                .toList()
+                .sortedWith(
+                    compareBy(
+                        { it.first.substringAfter('|').lowercase(Locale.ROOT) },
+                        { it.first.substringBefore('|').lowercase(Locale.ROOT) }
+                    )
+                )
             if (folders.isEmpty()) {
-                EmptyState(backdrop, title = "No folders yet", message = "Folders containing video files will appear here.", action = "Refresh library", onAction = { onFolderSelected("") })
+                EmptyState(
+                    backdrop,
+                    title = "No folders yet",
+                    message = "Folders containing video files will appear here.",
+                    action = "Refresh library",
+                    onAction = onRescan
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 176.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(folders, key = { it.first }) { (name, folderVideos) ->
-                        Column(Modifier.fillMaxWidth().clickable { onFolderSelected(name) }) {
+                    items(folders, key = { it.first }) { (identity, folderVideos) ->
+                        val path = identity.substringAfter('|')
+                        val name = path.substringAfterLast('/').ifBlank { "Internal storage" }
+                        val breadcrumb = path.replace("/", " › ").ifBlank { "Internal storage" }
+                        Column(
+                            Modifier.fillMaxWidth().clickable { onFolderSelected(identity) }
+                        ) {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -487,9 +654,14 @@ private fun FoldersScreen(
                                 Spacer(Modifier.width(16.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                                    Text("${folderVideos.size} media files", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "$breadcrumb · ${folderVideos.size} media files",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
                                 }
-                                Icon(Icons.Default.ViewList, contentDescription = "Open folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -600,9 +772,33 @@ private fun SettingsScreen(
                             SettingItem(
                                 Icons.Default.Settings,
                                 "Playback gestures",
-                                "Enable double-tap seeking and touch shortcuts",
+                                "Enable double-tap, swipe-to-seek, and brightness/volume gestures",
                                 gesturesEnabled,
                                 onGesturesEnabledChanged
+                            )
+                        )
+                    )
+                }
+                item {
+                    SettingsActionSection(
+                        "Gesture guide",
+                        listOf(
+                            ActionItem(
+                                Icons.Default.Tune,
+                                "How playback gestures work",
+                                "Double-tap, swipe-to-seek, brightness, volume and the seek bar",
+                                {
+                                    onShowInfoDialog(
+                                        "Playback gesture guide",
+                                        "• Double-tap the left or right side to rewind or advance 10 seconds.\n\n" +
+                                            "• Double-tap the centre to play or pause.\n\n" +
+                                            "• Swipe horizontally across the picture: left rewinds, right advances. A preview shows the target time; the seek is committed when you lift your finger. Cancelling the gesture does not seek.\n\n" +
+                                            "• Swipe vertically on the left side to adjust screen brightness.\n\n" +
+                                            "• Swipe vertically on the right side to adjust Android media volume. Hardware volume keys and the on-screen indicator use the same media stream.\n\n" +
+                                            "• Tap or drag the timeline to seek precisely. It also exposes an adjustable progress control to accessibility services.\n\n" +
+                                            "When player controls are locked, gestures are disabled until you unlock them. Turn off Playback gestures in Settings to disable the gesture shortcuts."
+                                    )
+                                }
                             )
                         )
                     )
@@ -633,12 +829,8 @@ private fun SettingsScreen(
                             listOf(
                                 ActionItem(
                                     Icons.Default.Delete,
-                                    "Direct media deletion",
-                                    if (hasMediaManagementAccess) {
-                                        "Enabled — Android won't ask for every file"
-                                    } else {
-                                        "Allow once to avoid repeated delete confirmations"
-                                    },
+                                    "Manage media access",
+                                    if (hasMediaManagementAccess) "Enabled" else "Not enabled",
                                     onManageMediaAccess
                                 )
                             )
@@ -672,16 +864,29 @@ private fun SettingsScreen(
                                 }
                             ),
                             ActionItem(
+                                Icons.Default.Info,
+                                "Third-party notices",
+                                "Licences and component source information",
+                                {
+                                    val notices = runCatching {
+                                        context.assets.open("THIRD_PARTY_NOTICES.md")
+                                            .bufferedReader()
+                                            .use { it.readText() }
+                                    }.getOrElse { "Third-party notices are available in the LUCENT source repository." }
+                                    onShowInfoDialog("Third-party notices", notices)
+                                }
+                            ),
+                            ActionItem(
                                 Icons.Default.Bookmark,
                                 "Project source",
                                 "Browse the source code on GitHub",
                                 {
                                     runCatching {
-                                        uriHandler.openUri("https://github.com/tejastajane/LiquidPlayer-Android")
+                                        uriHandler.openUri("https://github.com/tejastajane/LUCENT-Android")
                                     }.onFailure {
                                         onShowInfoDialog(
                                             "Project source",
-                                            "The project page could not be opened automatically. Visit: https://github.com/tejastajane/LiquidPlayer-Android"
+                                            "The project page could not be opened automatically. Visit: https://github.com/tejastajane/LUCENT-Android"
                                         )
                                     }
                                 }
@@ -766,6 +971,68 @@ private fun SettingsActionSection(title: String, items: List<ActionItem>) {
     }
 }
 
+private object VideoThumbnailLoader {
+    private const val WIDTH_PX = 320
+    private const val HEIGHT_PX = 180
+    private val decodeSemaphore = Semaphore(3)
+    private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
+
+    suspend fun load(context: android.content.Context, item: VideoItem): Bitmap? {
+        val key = cacheKey(item)
+        cache.get(key)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            decodeSemaphore.withPermit {
+                cache.get(key) ?: decodeAtTenPercent(context, item)?.also { bitmap ->
+                    cache.put(key, bitmap)
+                }
+            }
+        }
+    }
+
+    private fun cacheKey(item: VideoItem): String =
+        "${item.uri}|${item.durationMs}|${item.sizeBytes}"
+
+    private fun decodeAtTenPercent(context: android.content.Context, item: VideoItem): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, item.uri)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: item.durationMs
+            // Keep the existing design choice: use a frame at 10% of the video, not an arbitrary poster.
+            val frameTimeUs = durationMs.coerceAtLeast(0L) * 100L
+            val decoded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    WIDTH_PX,
+                    HEIGHT_PX
+                )
+            } else {
+                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?.let { frame ->
+                        Bitmap.createScaledBitmap(frame, WIDTH_PX, HEIGHT_PX, true).also { scaled ->
+                            if (scaled !== frame && !frame.isRecycled) frame.recycle()
+                        }
+                    }
+            }
+            decoded ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                runCatching {
+                    context.contentResolver.loadThumbnail(item.uri, Size(WIDTH_PX, HEIGHT_PX), null)
+                }.getOrNull()
+            } else null
+        } catch (_: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                runCatching {
+                    context.contentResolver.loadThumbnail(item.uri, Size(WIDTH_PX, HEIGHT_PX), null)
+                }.getOrNull()
+            } else null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VideoRow(
@@ -775,22 +1042,12 @@ private fun VideoRow(
     onRequestActions: (VideoItem) -> Unit
 ) {
     val context = LocalContext.current
-    val thumbnail by produceState<Bitmap?>(initialValue = null, item.uri) {
-        value = withContext(Dispatchers.IO) {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(context, item.uri)
-                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: item.durationMs
-                retriever.getFrameAtTime(duration.coerceAtLeast(0L) * 100L, MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: if (Build.VERSION.SDK_INT >= 29) runCatching { context.contentResolver.loadThumbnail(item.uri, Size(320, 180), null) }.getOrNull() else null
-            } catch (_: Exception) {
-                if (Build.VERSION.SDK_INT >= 29) runCatching { context.contentResolver.loadThumbnail(item.uri, Size(320, 180), null) }.getOrNull() else null
-            } finally { runCatching { retriever.release() } }
-        }
+    val thumbnail by produceState<Bitmap?>(initialValue = null, item.uri, item.durationMs, item.sizeBytes) {
+        value = VideoThumbnailLoader.load(context, item)
     }
     val preferences = remember(context) { context.getSharedPreferences("liquid_player", 0) }
     val progress = remember(item.uri, item.durationMs, preferences) {
-        val saved = preferences.getLong("playback_position_" + item.uri.toString().hashCode(), 0L)
+        val saved = PlaybackPrefs.readPlaybackPosition(preferences, item.uri.toString())
         if (item.durationMs > 0L) (saved.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     }
 
@@ -811,7 +1068,7 @@ private fun VideoRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             Text(listOf(if (item.sizeBytes > 0L) Formatter.formatFileSize(context, item.sizeBytes) else "Local video", if (item.durationMs > 0L) formatDuration(item.durationMs) else null, item.mimeType?.substringAfter('/')?.uppercase(Locale.ROOT)).filterNotNull().joinToString("  ·  "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(item.folderName, color = Color(0xFFAAAAAA), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.folderName, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(2.dp))
         IconButton(onClick = { onRequestActions(item) }) {
@@ -930,6 +1187,7 @@ private fun KyantRenameDialog(
     val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val foreground = if (light) Color.Black else Color.White
     var value by remember(item.uri, item.name) { mutableStateOf(item.name) }
+    var validationError by remember(item.uri, item.name) { mutableStateOf<RenameNameError?>(null) }
     KyantDialogCard(
         backdrop, "Rename video", onDismissRequest,
         content = {
@@ -937,13 +1195,29 @@ private fun KyantRenameDialog(
                 Text("File name", color = foreground.copy(alpha = 0.68f), style = MaterialTheme.typography.labelMedium)
                 BasicTextField(
                     value = value,
-                    onValueChange = { value = it },
+                    onValueChange = {
+                        value = it
+                        validationError = null
+                    },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = foreground),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         .background(if (light) Color.Black.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
                         .padding(horizontal = 14.dp, vertical = 14.dp)
                 )
+                validationError?.let { error ->
+                    val message = when (error) {
+                        RenameNameError.Empty -> stringResource(R.string.rename_error_empty)
+                        RenameNameError.InvalidCharacter -> stringResource(R.string.rename_error_invalid_character)
+                        RenameNameError.TooLong -> stringResource(R.string.rename_error_too_long)
+                    }
+                    Text(
+                        message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         },
         actions = {
@@ -951,10 +1225,12 @@ private fun KyantRenameDialog(
             KyantButton(
                 "Save", true, light,
                 onClick = {
-                    val requested = value.trim()
-                    if (requested.isNotBlank()) {
-                        val ext = item.name.substringAfterLast('.', "")
-                        onSave(item, if (ext.isNotBlank() && !requested.contains('.')) "$requested.$ext" else requested)
+                    val result = buildRenameFileName(item.name, value)
+                    if (result.error == null && result.fileName != null) {
+                        validationError = null
+                        onSave(item, result.fileName)
+                    } else {
+                        validationError = result.error
                     }
                 },
                 modifier = Modifier.weight(1f)
@@ -970,7 +1246,8 @@ private fun KyantVideoActionSheet(
     onInformation: () -> Unit,
     onRename: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMoveToCategory: () -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
         KyantOverlayScrim(onDismissRequest)
@@ -994,6 +1271,7 @@ private fun KyantVideoActionSheet(
                 VideoActionItem(Icons.Default.Info, "Information", onInformation)
                 VideoActionItem(Icons.Default.Edit, "Rename", onRename)
                 VideoActionItem(Icons.Default.Share, "Share", onShare)
+                VideoActionItem(Icons.Default.Tune, stringResource(R.string.move_to_category), onMoveToCategory)
                 VideoActionItem(Icons.Default.Delete, "Delete", onDelete)
             }
         }
@@ -1011,6 +1289,61 @@ private fun videoInformationText(context: android.content.Context, item: VideoIt
         if (item.dateAddedSeconds > 0L) append("Added: " + DateFormat.getDateTimeInstance().format(Date(item.dateAddedSeconds * 1_000L)))
     }
 
+@Composable
+private fun KyantCategoryDialog(
+    backdrop: Backdrop,
+    currentCategory: MediaCategory,
+    onDismissRequest: () -> Unit,
+    onSave: (MediaCategory?) -> Unit
+) {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    var selection by remember(currentCategory) { mutableStateOf(currentCategory) }
+    KyantDialogCard(
+        backdrop,
+        stringResource(R.string.category_dialog_title),
+        onDismissRequest,
+        content = {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text(
+                    stringResource(R.string.category_explanation),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                MediaCategory.entries.forEach { option ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { selection = option }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(option.categoryLabelResource()),
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        if (selection == option) {
+                            Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+        },
+        actions = {
+            KyantButton(stringResource(R.string.category_automatic), false, light, { onSave(null) }, Modifier.weight(1f))
+            KyantButton(stringResource(R.string.category_save), true, light, { onSave(selection) }, Modifier.weight(1f))
+        }
+    )
+}
+
+private fun MediaCategory.categoryLabelResource(): Int = when (this) {
+    MediaCategory.Movie -> R.string.category_movie
+    MediaCategory.TvShow -> R.string.category_tv_show
+    MediaCategory.Anime -> R.string.category_anime
+    MediaCategory.Other -> R.string.category_other
+}
 @Composable
 private fun VideoActionItem(
     icon: ImageVector,
@@ -1035,8 +1368,8 @@ private fun EmptyState(
     backdrop: LayerBackdrop,
     title: String,
     message: String,
-    action: String,
-    onAction: () -> Unit,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
     secondaryAction: String? = null,
     onSecondaryAction: (() -> Unit)? = null
 ) {
@@ -1046,7 +1379,15 @@ private fun EmptyState(
                 Icon(Icons.Default.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(42.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = onAction, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background)) { Text(action) }
+                if (action != null && onAction != null) {
+                    Button(
+                        onClick = onAction,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.onBackground,
+                            contentColor = MaterialTheme.colorScheme.background
+                        )
+                    ) { Text(action) }
+                }
                 if (secondaryAction != null && onSecondaryAction != null) {
                     OutlinedButton(onClick = onSecondaryAction, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)) { Text(secondaryAction) }
                 }
@@ -1169,9 +1510,7 @@ private fun BottomNavigation(
 
             Spacer(Modifier.width(12.dp))
 
-            val searchModifier = Modifier.width(searchWidth).height(searchHeight).clip(
-                if (searchExpanded) RoundedCornerShape(50.dp) else CircleShape
-            ).then(
+            val searchModifier = Modifier.width(searchWidth).height(searchHeight).then(
                 if (!searchExpanded) Modifier.clickable {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onSearchExpandedChange(true)
@@ -1186,7 +1525,7 @@ private fun BottomNavigation(
             ) {
                 AnimatedContent(
                     targetState = searchExpanded,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(50.dp)),
                     contentAlignment = Alignment.Center,
                     transitionSpec = {
                         if (targetState) {
@@ -1248,24 +1587,6 @@ private fun BottomNavigation(
 }
 
 
-private val tvEpisodeNamePattern = Regex(
-    """(?i)(?:\bs\d{1,2}\s*[._ -]*e\d{1,3}\b|\b\d{1,2}\s*x\s*\d{1,3}\b|\b(?:season|episode|ep)\s*[._ #:-]*\d{1,3}\b|\b\d{1,2}e\d{1,3}\b|^\s*(?:episode|ep)[ ._-]*\d{1,3}\b)"""
-)
-private val tvFolderPattern = Regex(
-    """(?i)^(?:tv|tv shows?|shows?|series|web[ ._-]*series|episodes?|season[ ._-]*\d+|s\d{1,2}|anime series|cartoon series)$"""
-)
-
-private fun isLikelyTvEpisode(name: String, pathSegments: List<String>): Boolean {
-    val stem = name.substringBeforeLast('.', name).lowercase(Locale.ROOT).replace('_', ' ')
-    // Some downloads use leading episode numbers inside per-show folders.
-    val numberedEpisode = Regex("""(?i)^\s*\[?\d{1,3}\]?\s*[._ -]+""").containsMatchIn(stem) &&
-        pathSegments.any { it.contains("season") || it.contains("series") || it.contains("tv") || it.contains("anime") }
-    return tvEpisodeNamePattern.containsMatchIn(stem) ||
-        numberedEpisode ||
-        pathSegments.any { segment -> tvFolderPattern.matches(segment) }
-}
-
-
 @Composable
 private fun ResumePlaybackPill(
     backdrop: Backdrop,
@@ -1303,7 +1624,3 @@ private fun ResumePlaybackPill(
         }
     }
 }
-
-private val nonMovieFolderPattern = Regex(
-    """(?i)^(?:dcim|camera|screenshots?|screen[ ._-]*recordings?|screenrecordings?|recordings?|whatsapp(?:[ ._-]*videos?)?|telegram(?:[ ._-]*videos?)?|instagram|reels?|shorts?|clips?|statuses?|memes?)$"""
-)

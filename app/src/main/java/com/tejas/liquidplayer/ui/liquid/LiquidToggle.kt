@@ -2,6 +2,7 @@ package com.tejas.liquidplayer.ui.liquid
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,8 +26,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -71,7 +70,6 @@ fun LiquidToggle(
         Color(0xFF787880).copy(alpha = 0.36f)
     }
 
-    val checkedState = rememberUpdatedState(checked)
     val onCheckedChangeState = rememberUpdatedState(onCheckedChange)
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
@@ -90,13 +88,13 @@ fun LiquidToggle(
             pressedScale = 1.5f,
             onDragStarted = {},
             onDragStopped = {
-                val next = if (didDrag) {
-                    targetValue >= 0.5f
-                } else {
-                    !checkedState.value
+                // A tap is handled by the outer toggleable semantics/click target.
+                // Commit only a real drag so touch and accessibility cannot toggle twice.
+                if (didDrag) {
+                    val next = targetValue >= 0.5f
+                    fraction = if (next) 1f else 0f
+                    onCheckedChangeState.value(next)
                 }
-                fraction = if (next) 1f else 0f
-                onCheckedChangeState.value(next)
                 didDrag = false
             },
             onDrag = { _, dragAmount ->
@@ -125,7 +123,18 @@ fun LiquidToggle(
     }
 
     val trackBackdrop = rememberLayerBackdrop()
-    Box(modifier, contentAlignment = Alignment.CenterStart) {
+    Box(
+        modifier
+            .size(width = 64.dp, height = 48.dp)
+            .toggleable(
+                value = checked,
+                interactionSource = null,
+                indication = null,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            ),
+        contentAlignment = Alignment.CenterStart
+    ) {
         Box(
             Modifier
                 .layerBackdrop(trackBackdrop)
@@ -147,7 +156,6 @@ fun LiquidToggle(
                         lerp(-padding, -(padding + dragWidth), progress)
                     }
                 }
-                .semantics { role = Role.Switch }
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
                     // Combine the isolated Settings underlay with this toggle's own track sample.

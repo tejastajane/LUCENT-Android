@@ -3,6 +3,7 @@ package com.tejas.liquidplayer.data
 import android.content.ContentUris
 import android.content.ContentResolver
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 
 class VideoRepository(private val resolver: ContentResolver) {
@@ -16,6 +17,10 @@ class VideoRepository(private val resolver: ContentResolver) {
             add(MediaStore.Video.Media.MIME_TYPE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 add(MediaStore.Video.Media.RELATIVE_PATH)
+                add(MediaStore.MediaColumns.VOLUME_NAME)
+            } else {
+                @Suppress("DEPRECATION")
+                add(MediaStore.Video.Media.DATA)
             }
         }
         val results = mutableListOf<VideoItem>()
@@ -33,26 +38,68 @@ class VideoRepository(private val resolver: ContentResolver) {
             val sizeIndex = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
             val dateIndex = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
             val mimeIndex = cursor.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
-            val pathIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.Video.Media.RELATIVE_PATH) else -1
+            val pathIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                cursor.getColumnIndex(MediaStore.Video.Media.RELATIVE_PATH)
+            } else {
+                cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+            }
+            val volumeIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                cursor.getColumnIndex(MediaStore.MediaColumns.VOLUME_NAME)
+            } else {
+                -1
+            }
+            @Suppress("DEPRECATION")
+            val externalStorageRoot = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                Environment.getExternalStorageDirectory().absolutePath
+            } else {
+                ""
+            }
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idIndex)
+                val storedPath = if (pathIndex >= 0) cursor.getString(pathIndex).orEmpty() else ""
+                val relativePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    storedPath
+                } else {
+                    legacyRelativePath(storedPath, externalStorageRoot)
+                }
+                val volumeName = if (volumeIndex >= 0) cursor.getString(volumeIndex) else null
+                val collectionUri = if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    !volumeName.isNullOrBlank()
+                ) {
+                    MediaStore.Video.Media.getContentUri(volumeName)
+                } else {
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                }
                 results += VideoItem(
                     id = id,
-                    uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id),
+                    uri = ContentUris.withAppendedId(collectionUri, id),
                     name = cursor.getString(nameIndex).orEmpty(),
-                    relativePath = if (pathIndex >= 0) cursor.getString(pathIndex).orEmpty() else "Movies/",
+                    relativePath = relativePath,
                     durationMs = if (durationIndex >= 0) cursor.getLong(durationIndex) else 0L,
                     sizeBytes = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else 0L,
                     dateAddedSeconds = if (dateIndex >= 0) cursor.getLong(dateIndex) else 0L,
-                    mimeType = if (mimeIndex >= 0) cursor.getString(mimeIndex) else null
+                    mimeType = if (mimeIndex >= 0) cursor.getString(mimeIndex) else null,
+                    volumeName = volumeName
                 )
             }
         }
         return sortVideosAscending(results)
     }
+}
 
-
+internal fun legacyRelativePath(dataPath: String, externalStorageRoot: String): String {
+    val normalizedData = dataPath.replace('\\', '/').trimEnd('/')
+    val normalizedRoot = externalStorageRoot.replace('\\', '/').trimEnd('/')
+    val rootPrefix = "$normalizedRoot/"
+    val pathForDisplay = if (normalizedRoot.isNotEmpty() && normalizedData.startsWith(rootPrefix)) {
+        normalizedData.removePrefix(rootPrefix)
+    } else {
+        normalizedData
+    }
+    val parent = pathForDisplay.substringBeforeLast('/', "")
+    return parent.trim('/').let { if (it.isEmpty()) "" else "$it/" }
 }
 
 fun formatDuration(durationMs: Long): String {

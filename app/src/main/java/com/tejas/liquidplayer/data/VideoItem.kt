@@ -1,5 +1,7 @@
 package com.tejas.liquidplayer.data
 
+import java.security.MessageDigest
+
 import android.net.Uri
 import java.util.Locale
 
@@ -11,10 +13,20 @@ data class VideoItem(
     val durationMs: Long,
     val sizeBytes: Long,
     val dateAddedSeconds: Long,
-    val mimeType: String? = null
+    val mimeType: String? = null,
+    val volumeName: String? = null
 ) {
+    /** Normalized path is retained for display; storage volume is part of folder identity. */
+    val folderPath: String
+        get() = normalizeRelativePath(relativePath)
+
+    /** A relative path alone is not unique across internal and removable storage volumes. */
+    val folderIdentity: String
+        get() = buildFolderIdentity(volumeName, relativePath)
+
+    /** Friendly leaf label; use [folderPath] for identity and filtering. */
     val folderName: String
-        get() = relativePath.trimEnd('/').substringAfterLast('/').ifBlank { "Internal storage" }
+        get() = folderPath.substringAfterLast('/').ifBlank { "Internal storage" }
 }
 
 data class TrackOption(val id: Int, val label: String)
@@ -33,7 +45,32 @@ fun sortVideosAscending(items: List<VideoItem>): List<VideoItem> =
         else compareNaturalNames(first.name, second.name)
     }
 
-private fun compareNaturalNames(first: String, second: String): Int {
+internal fun normalizeRelativePath(path: String): String = path.trim().trim('/')
+
+internal fun buildFolderIdentity(volumeName: String?, relativePath: String): String {
+    val normalizedVolume = volumeName?.trim()?.takeIf { it.isNotEmpty() } ?: "legacy"
+    return "$normalizedVolume|${normalizeRelativePath(relativePath)}"
+}
+
+private const val RESUME_END_THRESHOLD_MS = 1_500L
+
+internal fun isResumablePlaybackPosition(savedPositionMs: Long, durationMs: Long): Boolean =
+    savedPositionMs > RESUME_END_THRESHOLD_MS &&
+        (durationMs <= 0L || savedPositionMs < durationMs - RESUME_END_THRESHOLD_MS)
+
+/**
+ * Stable, collision-resistant identifier for media-specific preference keys.
+ * MediaStore IDs are volume-relative and URI.hashCode() can collide; hash the full URI.
+ */
+internal fun mediaPreferenceId(uriString: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(uriString.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { byte ->
+        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+}
+
+internal fun compareNaturalNames(first: String, second: String): Int {
     val firstTokens = naturalSortTokens.findAll(first.lowercase(Locale.ROOT)).map { it.value }.toList()
     val secondTokens = naturalSortTokens.findAll(second.lowercase(Locale.ROOT)).map { it.value }.toList()
     val sharedTokenCount = minOf(firstTokens.size, secondTokens.size)

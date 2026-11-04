@@ -1,5 +1,7 @@
 package com.tejas.liquidplayer.ui.liquid
 
+import com.tejas.liquidplayer.ui.playPillShadow
+
 // Adapted from Kyant0/AndroidLiquidGlass (Apache-2.0): preserves the library's
 // combined-backdrop, damped spring, refraction, highlight and shadow interaction.
 
@@ -197,6 +199,7 @@ fun LiquidBottomTabs(
                         scaleX = scale
                         scaleY = scale
                     },
+                    shadow = { playPillShadow() },
                     onDrawSurface = { drawRect(containerColor) }
                 )
                 .then(interactiveHighlight.modifier)
@@ -276,15 +279,7 @@ fun LiquidBottomTabs(
                         // Keep a subtle premium rim visible while idle, then lift on press.
                         Highlight.Default.copy(alpha = 0.45f + 0.45f * progress)
                     },
-                    shadow = {
-                        val progress = dampedDragAnimation.pressProgress
-                        Shadow(
-                            radius = 10f.dp,
-                            offset = androidx.compose.ui.unit.DpOffset(0f.dp, 2f.dp),
-                            color = Color.Black.copy(alpha = 0.42f),
-                            alpha = 0.55f + 0.35f * progress
-                        )
-                    },
+                    shadow = { playPillShadow() },
                     innerShadow = {
                         val progress = dampedDragAnimation.pressProgress
                         InnerShadow(

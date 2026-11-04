@@ -21,13 +21,13 @@
 
 LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combines libVLC playback with a custom, neutral Liquid Glass interface designed around translucent surfaces, backdrop blur, and lens refraction.
 
-> **Project status:** Active development. The downloadable APK is an automatically built debug/testing build, not a Play Store release.
+> **Project status:** Active development. Branch builds produce testing APK artifacts. The public latest-APK release is updated only by a main-branch APK signed with LUCENT's configured persistent signing key and verified certificate fingerprint; it is not a Play Store release.
 
 ## Download
 
 **[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk)**
 
-The link points to the APK attached to the latest successful main-branch build. GitHub Actions publishes a new release after the production APK is built successfully.
+The link points to the latest successfully published, persistently signed main-branch APK. Builds without the signing secrets remain downloadable as workflow artifacts and do not replace the public latest release.
 
 To install, download the APK on your Android device and open it. Android may ask you to allow installation from the browser or file manager you used.
 
@@ -36,9 +36,10 @@ To install, download the APK on your Android device and open it. Android may ask
 ### Media library
 - Scans the device's video library through Android MediaStore.
 - Three main sections: **Videos**, **Folders**, and **Settings**.
-- Filter videos by All, Latest, Movies, TV Shows, and Anime.
+- Filter videos by All, Latest, Movies, TV Shows, Anime, and Favourites.
+- Manually correct a video's category from its video options when automatic classification does not fit.
 - Search video names and folder paths.
-- Open individual videos through Android's system document picker.
+- Open individual videos through Android's system document picker or supported video shares from other apps.
 - Display video thumbnails, duration, file size, and storage location.
 - Sort episode and season filenames in natural numeric order.
 - Pull down on the library pages to rescan indexed media.
@@ -49,12 +50,13 @@ To install, download the APK on your Android device and open it. Android may ask
 - libVLC-based local video playback.
 - Play, pause, seek, and move through the library playlist with previous/next controls.
 - Remember playback progress and per-video audio/subtitle selections.
+- Handle audio-focus changes when another app interrupts playback.
 - Select embedded audio and subtitle tracks.
 - Load an external subtitle file and adjust subtitle delay in 0.1-second steps.
 - Change playback speed from 0.5× to 2×.
 - Choose Original, 16:9, 4:3, 1:1, 21:9, and 2.35:1 display ratios.
 - Save and revisit per-video playback bookmarks.
-- Mark videos as favourites, share them, and inspect playback information.
+- Mark videos as favourites, browse them through the Favourites filter, share them, and inspect playback information.
 - Use picture-in-picture on supported Android versions.
 
 ### Player controls and design
@@ -105,7 +107,13 @@ The application ID is intentionally retained across the LUCENT rebrand so existi
 4. Build the production-flavour debug APK:
 
 ```bash
-gradle --no-daemon :app:assembleProductionDebug
+./gradlew --no-daemon :app:assembleProductionDebug
+```
+
+Run the focused local regression tests and Android lint checks:
+
+```bash
+./gradlew --no-daemon :app:testProductionDebugUnitTest :app:lintProductionDebug
 ```
 
 The local APK is written to:
@@ -116,19 +124,27 @@ app/build/outputs/apk/production/debug/app-production-debug.apk
 
 ## Automated APK builds
 
-The GitHub Actions workflow:
-1. Builds the production-flavour debug APK.
-2. Renames the output to `lucent.apk` and generates a SHA-256 checksum.
-3. Uploads the APK and checksum as a workflow artifact.
-4. Publishes a GitHub Release with the same files after a successful build on `main`.
+The APK workflow:
+1. Uses the tracked Gradle Wrapper and JDK 21.
+2. Builds a persistently signed production APK when the release keystore secrets are present; otherwise it builds a debug/testing APK.
+3. Generates a SHA-256 checksum and uploads the APK artifact.
+4. Publishes or updates the public latest release only for a main-branch build whose APK certificate matches the configured fingerprint.
 
-Pull requests and implementation branches build and upload the APK artifact. Only successful builds on `main` update the permanent latest-download link. The workflow performs the APK build only; it does not run emulator or instrumentation tests.
+The verification workflow separately runs focused unit tests and Android lint on pushes and pull requests. It does not claim to replace device testing, playback-corpus testing, or accessibility sessions.
 
-See the [Build workflow](https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml) for build history and logs.
+**Stable release signing:** Configure these GitHub Actions repository secrets before expecting new main builds to update the public latest APK: `LUCENT_KEYSTORE_BASE64`, `LUCENT_KEYSTORE_PASSWORD`, `LUCENT_KEY_ALIAS`, `LUCENT_KEY_PASSWORD`, and `LUCENT_SIGNING_CERT_SHA256`. Keep one keystore safe and backed up outside the repository; never commit it. The SHA-256 fingerprint must be the certificate belonging to that key. CI rejects a release APK if its signer differs.
+
+Historical testing APKs were signed with ephemeral debug certificates. Because those certificates differ, users of those historical builds may need a one-time uninstall/reinstall to move to the new stable signing identity; uninstalling removes app data. Future stable-signed releases can update in place when the same key is retained.
+
+See the [APK workflow](https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml) and [verification workflow](https://github.com/tejastajane/LUCENT-Android/actions/workflows/verify.yml) for build and quality-check history.
 
 ## Design direction
 
 LUCENT uses a restrained neutral palette: black, white, and grey. It uses real backdrop-sampled Liquid Glass—not generic blue glassmorphism. The design contract and implementation constraints are documented in [DESIGN.md](DESIGN.md).
+
+## Data backup
+
+LUCENT keeps portable app settings separate from local playback history. Theme and playback settings can participate in Android backup, while playback history, media-provider URIs, bookmarks, and other device-local player state are excluded because those references may not remain usable after a restore or device transfer.
 
 ## Third-party notices and licensing
 

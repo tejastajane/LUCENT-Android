@@ -3,6 +3,27 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseKeystoreFile = System.getenv("LUCENT_KEYSTORE_FILE")
+val releaseStorePassword = System.getenv("LUCENT_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("LUCENT_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("LUCENT_KEY_PASSWORD")
+val hasStableReleaseSigning = listOf(
+    releaseKeystoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
+// GitHub Actions supplies the workflow run number so each build has a monotonic
+// versionCode. Local builds retain a safe development fallback.
+val lucentVersionCode = System.getenv("LUCENT_VERSION_CODE")
+    ?.toIntOrNull()
+    ?.takeIf { it in 1..2_100_000_000 }
+    ?: 1
+val lucentVersionName = System.getenv("LUCENT_VERSION_NAME")
+    ?.takeIf { it.isNotBlank() }
+    ?: "0.1.0"
+
 android {
     namespace = "com.tejas.liquidplayer"
     compileSdk = 37
@@ -11,8 +32,27 @@ android {
         applicationId = "com.tejas.liquidplayer"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = lucentVersionCode
+        versionName = lucentVersionName
+    }
+
+    signingConfigs {
+        if (hasStableReleaseSigning) {
+            create("stableRelease") {
+                storeFile = file(releaseKeystoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (hasStableReleaseSigning) {
+                signingConfig = signingConfigs.getByName("stableRelease")
+            }
+        }
     }
 
     flavorDimensions += "environment"
@@ -51,6 +91,7 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
@@ -66,4 +107,5 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    testImplementation("junit:junit:4.13.2")
 }

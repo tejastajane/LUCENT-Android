@@ -2,8 +2,7 @@ package com.tejas.liquidplayer.ui
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.combinedClickable
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -14,11 +13,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -32,6 +33,17 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+
+/**
+ * Shared outer shadow used by the Play/Resume pill and the library glass surfaces.
+ * Keep these values in one place so their shadows remain visually identical.
+ */
+internal fun playPillShadow(alpha: Float = 0.95f): Shadow = Shadow(
+    radius = 14.dp,
+    offset = DpOffset(0.dp, 2.dp),
+    color = Color.Black.copy(alpha = 0.42f),
+    alpha = alpha
+)
 
 /**
  * A real Kyant0 Backdrop surface.
@@ -48,6 +60,7 @@ fun GlassSurface(
     navMaterial: Boolean = false,
     flatNavMaterial: Boolean = false,
     clampNavLensToSurfaceHeight: Boolean = false,
+    dropShadowElevation: Dp = 0.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
     val isLightSurface = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -58,8 +71,17 @@ fun GlassSurface(
         Color.White.copy(alpha = 0.055f)
     }
     val shape = RoundedCornerShape(cornerRadius)
+    val surfaceModifier = if (dropShadowElevation > 0.dp) {
+        Modifier.shadow(
+            elevation = dropShadowElevation,
+            shape = shape,
+            clip = false
+        ).then(modifier)
+    } else {
+        modifier
+    }
     Box(
-        modifier.drawBackdrop(
+        surfaceModifier.drawBackdrop(
             backdrop = backdrop,
             shape = { shape },
             effects = {
@@ -98,12 +120,7 @@ fun GlassSurface(
                 )
             },
             shadow = {
-                Shadow(
-                    radius = 14.dp,
-                    offset = DpOffset(0.dp, 2.dp),
-                    color = Color.Black.copy(alpha = 0.42f),
-                    alpha = if (flatNavMaterial) 0f else 0.95f
-                )
+                playPillShadow(alpha = if (flatNavMaterial) 0f else 0.95f)
             },
             innerShadow = {
                 InnerShadow(
@@ -189,14 +206,20 @@ fun GlassIconButton(
     val view = LocalView.current
     val base = modifier.size(width = 68.dp, height = 48.dp).clip(RoundedCornerShape(50.dp))
     val inputModifier = if (onLongClick != null) {
-        base.pointerInput(onClick, onLongClick) {
-            detectTapGestures(
-                onTap = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
-                onLongPress = { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); onLongClick() }
-            )
-        }
+        base.combinedClickable(
+            interactionSource = null,
+            indication = null,
+            role = Role.Button,
+            onClickLabel = contentDescription,
+            onLongClickLabel = "Open aspect ratio options",
+            onClick = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
+            onLongClick = { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); onLongClick() }
+        )
     } else {
-        base.clickable { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() }
+        base.clickable(role = Role.Button) {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onClick()
+        }
     }
     GlassSurface(
         backdrop = backdrop,
