@@ -1420,6 +1420,7 @@ private fun VideoPlayerScreenContent(
                         )
                     }
                     if (
+                        isLandscape &&
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                         activity != null &&
                         context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
