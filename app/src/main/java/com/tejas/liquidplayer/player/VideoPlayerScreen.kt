@@ -182,6 +182,8 @@ import org.videolan.libvlc.util.VLCVideoLayout
 
 private enum class PlayerPanel { None, Audio, Subtitles, Tools, AspectRatio, Speed, Bookmarks, Information }
 
+private const val PLAYER_FEEDBACK_BACKGROUND_ALPHA = 0.34f
+
 @Composable
 fun VideoPlayerScreen(
     video: VideoItem,
@@ -329,7 +331,6 @@ fun VideoPlayerScreen(
     var seekFeedbackAmountMs by remember { mutableLongStateOf(0L) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var swipeSeekPreview by remember(video.uri) { mutableStateOf<HorizontalSeekPreview?>(null) }
-    var swipeSeekPreviewPoint by remember(video.uri) { mutableStateOf(Offset.Zero) }
     var showSwipeSeekHint by remember(video.uri) { mutableStateOf(false) }
     var videoAspectRatio by remember(video.uri) { mutableFloatStateOf(16f / 9f) }
     var selectedAspectIndex by remember(video.uri) { mutableIntStateOf(0) }
@@ -946,7 +947,7 @@ fun VideoPlayerScreen(
                                 swipeSeekPreview = null
                                 if (dragAxis == 2) syncVolumeAfterDrag()
                             },
-                            onDrag = { change, dragAmount ->
+                            onDrag = { _, dragAmount ->
                                 accumulatedDragDistance += dragAmount
                                 if (dragAxis == 0) {
                                     when (
@@ -993,7 +994,6 @@ fun VideoPlayerScreen(
                                             surfaceWidthPx = size.width.toFloat()
                                         )
                                         swipeSeekPreview = HorizontalSeekPreview(seekStartMs, seekTargetMs)
-                                        swipeSeekPreviewPoint = change.position
                                         controlsInteractionToken++
                                     }
                                     2 -> {
@@ -1045,17 +1045,10 @@ fun VideoPlayerScreen(
         }
 
         swipeSeekPreview?.takeIf { !isInPictureInPictureMode }?.let { preview ->
-            val density = LocalDensity.current
-            val previewX = (
-                with(density) { swipeSeekPreviewPoint.x.toDp() } - 84.dp
-            ).coerceIn(12.dp, (screenWidth - 168.dp).coerceAtLeast(12.dp))
-            val previewY = (
-                with(density) { swipeSeekPreviewPoint.y.toDp() } - 88.dp
-            ).coerceIn(80.dp, (maxHeight - 180.dp).coerceAtLeast(80.dp))
             Column(
-                Modifier.offset(x = previewX, y = previewY)
+                Modifier.align(Alignment.Center)
                     .clip(RoundedCornerShape(22.dp))
-                    .background(Color.Black.copy(alpha = 0.76f))
+                    .background(Color.Black.copy(alpha = PLAYER_FEEDBACK_BACKGROUND_ALPHA))
                     .padding(horizontal = 22.dp, vertical = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -1117,7 +1110,7 @@ fun VideoPlayerScreen(
         }
         if (showAspectRatioFeedback && !isInPictureInPictureMode) {
             Box(Modifier.align(Alignment.Center)) {
-                Text("Aspect ratio · ${aspectRatios[selectedAspectIndex].first}", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(Color.Black.copy(alpha = 0.78f)).padding(horizontal = 18.dp, vertical = 10.dp))
+                Text("Aspect ratio · ${aspectRatios[selectedAspectIndex].first}", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(Color.Black.copy(alpha = PLAYER_FEEDBACK_BACKGROUND_ALPHA)).padding(horizontal = 18.dp, vertical = 10.dp))
             }
         }
 

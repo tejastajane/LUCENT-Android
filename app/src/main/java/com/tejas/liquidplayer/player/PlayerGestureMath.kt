@@ -5,6 +5,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToLong
 
+private const val HORIZONTAL_SEEK_SENSITIVITY = 1.75f
+
 internal data class HorizontalSeekPreview(
     val startPositionMs: Long,
     val targetPositionMs: Long
@@ -39,7 +41,7 @@ internal fun horizontalSeekTargetMs(
     val coarseDistance = max(normalizedDistance - 0.35f, 0f)
     val curveDistance = fineDistance * 0.4f + coarseDistance * 1.4f
     val direction = if (dragDistancePx < 0f) -1f else 1f
-    val delta = (timePerScreenMs * curveDistance * direction).roundToLong()
+    val delta = (timePerScreenMs * curveDistance * HORIZONTAL_SEEK_SENSITIVITY * direction).roundToLong()
 
     return (start + delta).coerceIn(0L, durationMs)
 }
