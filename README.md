@@ -36,9 +36,10 @@ To install, download the APK on your Android device and open it. Android may ask
 ### Media library
 - Scans the device's video library through Android MediaStore.
 - Three main sections: **Videos**, **Folders**, and **Settings**.
-- Filter videos by All, Latest, Movies, TV Shows, and Anime.
+- Filter videos by All, Latest, Movies, TV Shows, Anime, and Favourites.
+- Manually correct a video's category from its video options when automatic classification does not fit.
 - Search video names and folder paths.
-- Open individual videos through Android's system document picker.
+- Open individual videos through Android's system document picker or supported video shares from other apps.
 - Display video thumbnails, duration, file size, and storage location.
 - Sort episode and season filenames in natural numeric order.
 - Pull down on the library pages to rescan indexed media.
@@ -49,6 +50,7 @@ To install, download the APK on your Android device and open it. Android may ask
 - libVLC-based local video playback.
 - Play, pause, seek, and move through the library playlist with previous/next controls.
 - Remember playback progress and per-video audio/subtitle selections.
+- Handle audio-focus changes when another app interrupts playback.
 - Select embedded audio and subtitle tracks.
 - Load an external subtitle file and adjust subtitle delay in 0.1-second steps.
 - Change playback speed from 0.5× to 2×.
