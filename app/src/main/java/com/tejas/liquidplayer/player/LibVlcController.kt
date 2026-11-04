@@ -1,10 +1,3 @@
-internal fun cleanupOrphanedVlcRetryCache(cacheDirectory: java.io.File): Int {
-    val retryFiles = cacheDirectory.listFiles { file ->
-        file.isFile && file.name.startsWith("lucent-vlc-retry-")
-    } ?: return 0
-    return retryFiles.count { file -> runCatching { file.delete() }.getOrDefault(false) }
-}
-
 package com.tejas.liquidplayer.player
 
 import android.content.Context
@@ -25,6 +18,13 @@ import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
+
+internal fun cleanupOrphanedVlcRetryCache(cacheDirectory: java.io.File): Int {
+    val retryFiles = cacheDirectory.listFiles { file ->
+        file.isFile && file.name.startsWith("lucent-vlc-retry-")
+    } ?: return 0
+    return retryFiles.count { file -> runCatching { file.delete() }.getOrDefault(false) }
+}
 
 /**
  * Owns the libVLC native engine. Provider URIs are opened by Android and passed as
