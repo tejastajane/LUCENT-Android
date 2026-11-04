@@ -148,6 +148,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.sp
@@ -337,7 +338,6 @@ private fun VideoPlayerScreenContent(
     // low-opacity frame copy supplies a sample for glass controls without layering VLC output.
     var videoTextureView by remember { mutableStateOf<TextureView?>(null) }
     var backdropFrame by remember { mutableStateOf<Bitmap?>(null) }
-    var backdropFrameVersion by remember { mutableIntStateOf(0) }
     var attachedController by remember { mutableStateOf<LibVlcController?>(null) }
 
     var panel by remember { mutableStateOf(PlayerPanel.None) }
@@ -395,6 +395,8 @@ private fun VideoPlayerScreenContent(
         )
     }
     var showRemainingTime by remember(video.uri) { mutableStateOf(false) }
+    val positionProvider = remember(video.uri) { { positionMs } }
+    val remainingTimeProvider = remember(video.uri) { { showRemainingTime } }
     var audioTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
     var subtitleTracks by remember(video.uri) { mutableStateOf<List<TrackOption>>(emptyList()) }
     var selectedAudioTrackId by remember(video.uri) { mutableIntStateOf(-1) }
@@ -863,20 +865,15 @@ private fun VideoPlayerScreenContent(
     }) {
         val isLandscape = maxWidth > maxHeight
         val screenWidth = maxWidth
-        val frame = backdropFrame
-        val frameRevision = backdropFrameVersion
-        if (frame != null) {
-            Image(
-                bitmap = frame.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.FillBounds,
-                // Keep one stable drawing node. The revision invalidates its graphics layer
-                // as the double-buffered frame changes, without remounting the glass source.
-                modifier = Modifier.fillMaxSize().layerBackdrop(backdrop).graphicsLayer {
-                    alpha = 1f
-                    rotationZ = frameRevision * 0f
-                }
-            )
+        // Read the sampled bitmap in the draw phase, not composition. The 10 Hz backdrop
+        // sampler therefore invalidates only this drawing node instead of the player tree.
+        Canvas(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            backdropFrame?.let { frame ->
+                drawImage(
+                    frame.asImageBitmap(),
+                    dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1))
+                )
+            }
         }
 
         // VLC must render directly to its native TextureView. Wrapping it in layerBackdrop
@@ -935,7 +932,6 @@ private fun VideoPlayerScreenContent(
                     val copied = runCatching { texture.getBitmap(target) }.getOrNull()
                     if (copied != null) {
                         backdropFrame = copied
-                        backdropFrameVersion++
                         useFirstBuffer = !useFirstBuffer
                     }
                 }
@@ -1290,58 +1286,43 @@ private fun VideoPlayerScreenContent(
 
                 Spacer(Modifier.weight(1f))
 
-                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        formatDuration(positionMs),
-                        modifier = Modifier.widthIn(min = 44.dp),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    LiquidSeekBar(
-                        backdrop = backdrop,
-                        positionMs = positionMs,
-                        durationMs = durationMs,
-                        onSeekStart = {
-                            seekStartPositionMs = runCatching { controller.player.time }
-                                .getOrDefault(positionMs)
-                                .coerceIn(0L, durationMs.coerceAtLeast(0L))
-                            lastSeekDispatchAtMs = 0L
-                            isUserSeeking = true
-                        },
-                        onSeekPreview = { target ->
-                            positionMs = target
-                            controlsInteractionToken++
-                            val now = SystemClock.elapsedRealtime()
-                            if (lastSeekDispatchAtMs == 0L || now - lastSeekDispatchAtMs >= 100L) {
-                                controller.seekTo(target)
-                                lastSeekDispatchAtMs = now
-                            }
-                        },
-                        onSeek = { target ->
-                            positionMs = target
-                            isUserSeeking = false
-                            controlsInteractionToken++
+                PlaybackTimeline(
+                    backdrop = backdrop,
+                    positionProvider = positionProvider,
+                    durationMs = durationMs,
+                    showRemainingTimeProvider = remainingTimeProvider,
+                    onToggleRemainingTime = { showRemainingTime = !showRemainingTime },
+                    onSeekStart = {
+                        seekStartPositionMs = runCatching { controller.player.time }
+                            .getOrDefault(positionMs)
+                            .coerceIn(0L, durationMs.coerceAtLeast(0L))
+                        lastSeekDispatchAtMs = 0L
+                        isUserSeeking = true
+                    },
+                    onSeekPreview = { target ->
+                        positionMs = target
+                        controlsInteractionToken++
+                        val now = SystemClock.elapsedRealtime()
+                        if (lastSeekDispatchAtMs == 0L || now - lastSeekDispatchAtMs >= 100L) {
                             controller.seekTo(target)
-                            lastSeekDispatchAtMs = SystemClock.elapsedRealtime()
-                        },
-                        onSeekCancel = {
-                            controller.seekTo(seekStartPositionMs)
-                            positionMs = seekStartPositionMs
-                            isUserSeeking = false
-                        },
-                        modifier = Modifier.weight(1f).padding(horizontal = if (isLandscape) 14.dp else 10.dp)
-                    )
-                    Text(
-                        if (showRemainingTime) "-${formatDuration((durationMs - positionMs).coerceAtLeast(0L))}"
-                        else formatDuration(durationMs),
-                        modifier = Modifier.widthIn(min = 54.dp).clickable {
-                            showRemainingTime = !showRemainingTime
-                        },
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelMedium,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.End
-                    )
-                }
+                            lastSeekDispatchAtMs = now
+                        }
+                    },
+                    onSeek = { target ->
+                        positionMs = target
+                        isUserSeeking = false
+                        controlsInteractionToken++
+                        controller.seekTo(target)
+                        lastSeekDispatchAtMs = SystemClock.elapsedRealtime()
+                    },
+                    onSeekCancel = {
+                        controller.seekTo(seekStartPositionMs)
+                        positionMs = seekStartPositionMs
+                        isUserSeeking = false
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    horizontalPadding = if (isLandscape) 14.dp else 10.dp
+                )
                 Spacer(Modifier.height(if (isLandscape) 12.dp else 8.dp))
 
                 val currentVideoIndex = playlist.indexOfFirst { it.uri == video.uri }
@@ -1965,6 +1946,43 @@ private fun PlainBackButton(onClick: () -> Unit) {
     }
 }
 
+@Composable
+private fun PlaybackTimeline(
+    backdrop: Backdrop,
+    positionProvider: () -> Long,
+    durationMs: Long,
+    showRemainingTimeProvider: () -> Boolean,
+    onToggleRemainingTime: () -> Unit,
+    onSeekStart: () -> Unit,
+    onSeekPreview: (Long) -> Unit,
+    onSeek: (Long) -> Unit,
+    onSeekCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 10.dp
+) {
+    // Read high-frequency position state here so only this small row recomposes.
+    val positionMs = positionProvider()
+    val showRemainingTime = showRemainingTimeProvider()
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(formatDuration(positionMs), modifier = Modifier.widthIn(min = 44.dp), color = Color.White, style = MaterialTheme.typography.labelMedium)
+        LiquidSeekBar(
+            backdrop = backdrop,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            onSeekStart = onSeekStart,
+            onSeekPreview = onSeekPreview,
+            onSeek = onSeek,
+            onSeekCancel = onSeekCancel,
+            modifier = Modifier.weight(1f).padding(horizontal = horizontalPadding)
+        )
+        Text(if (showRemainingTime) "-${formatDuration((durationMs - positionMs).coerceAtLeast(0L))}" else formatDuration(durationMs),
+            modifier = Modifier.widthIn(min = 54.dp).clickable(onClick = onToggleRemainingTime),
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
+        )
+    }
+}
 @Composable
 private fun LiquidSeekBar(
     backdrop: com.kyant.backdrop.Backdrop,
