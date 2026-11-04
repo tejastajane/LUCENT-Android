@@ -7,9 +7,17 @@ on:
       - main2
       - second-audit-implementation
       - "implementation/**"
+    paths-ignore:
+      - "*.md"
+      - "**/*.md"
+      - "docs/**"
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "*.md"
+      - "**/*.md"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
