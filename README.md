@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tejastajane/LUCENT-Android/actions/runs/41836989693"><strong>Download latest APK</strong></a>
+  <a href="https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk"><strong>Download latest APK</strong></a>
   ·
   <a href="https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml">Build workflow</a>
   ·
@@ -21,13 +21,13 @@
 
 LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combines libVLC playback with a custom, neutral Liquid Glass interface designed around translucent surfaces, backdrop blur, and lens refraction.
 
-> **Project status:** Active development. Main-branch builds produce testing APK artifacts when stable release signing is not configured. The temporary download link below opens the latest available build run; it is not a Play Store release.
+> **Project status:** Active development. Once the persistent release-signing secrets are configured, every successful `main` build verifies the signing certificate and publishes the APK as the latest GitHub Release. Non-main and pull-request builds remain temporary testing artifacts. LUCENT is not a Play Store release.
 
 ## Download
 
-**[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/actions/runs/41836989693)**
+**[Download lucent.apk](https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk)**
 
-**Temporary build #330:** [Open its GitHub Actions run and download the `lucent-apk` artifact](https://github.com/tejastajane/LUCENT-Android/actions/runs/41836989693). Download the artifact ZIP, extract it, then install `lucent.apk` on your Android device. This Actions artifact is retained for 14 days and this pinned link will not automatically move when another build runs. The usual stable Release download will resume working after persistent release signing is configured.
+**Temporary build #330:** [Open its GitHub Actions run and download the `lucent-apk` artifact](https://github.com/tejastajane/LUCENT-Android/releases/latest/download/lucent.apk). Download the artifact ZIP, extract it, then install `lucent.apk` on your Android device. This Actions artifact is retained for 14 days and this pinned link will not automatically move when another build runs. The usual stable Release download will resume working after persistent release signing is configured.
 
 To install, download the APK on your Android device and open it. Android may ask you to allow installation from the browser or file manager you used.
 
