@@ -61,11 +61,11 @@ fun GlassSurface(
     }
     val shape = RoundedCornerShape(cornerRadius)
     val surfaceModifier = if (dropShadowElevation > 0.dp) {
-        modifier.shadow(
+        Modifier.shadow(
             elevation = dropShadowElevation,
             shape = shape,
             clip = false
-        )
+        ).then(modifier)
     } else {
         modifier
     }
