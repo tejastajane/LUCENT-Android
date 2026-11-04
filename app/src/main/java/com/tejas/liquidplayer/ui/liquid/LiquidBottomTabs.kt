@@ -1,5 +1,7 @@
 package com.tejas.liquidplayer.ui.liquid
 
+import com.tejas.liquidplayer.ui.playPillShadow
+
 // Adapted from Kyant0/AndroidLiquidGlass (Apache-2.0): preserves the library's
 // combined-backdrop, damped spring, refraction, highlight and shadow interaction.
 
@@ -197,15 +199,7 @@ fun LiquidBottomTabs(
                         scaleX = scale
                         scaleY = scale
                     },
-                    shadow = {
-                        // Match the soft outer shadow used by the Play/Resume glass pill.
-                        Shadow(
-                            radius = 14.dp,
-                            offset = androidx.compose.ui.unit.DpOffset(0.dp, 2.dp),
-                            color = Color.Black.copy(alpha = 0.42f),
-                            alpha = 0.95f
-                        )
-                    },
+                    shadow = { playPillShadow() },
                     onDrawSurface = { drawRect(containerColor) }
                 )
                 .then(interactiveHighlight.modifier)

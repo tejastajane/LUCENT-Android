@@ -35,6 +35,17 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 
 /**
+ * Shared outer shadow used by the Play/Resume pill and the library glass surfaces.
+ * Keep these values in one place so their shadows remain visually identical.
+ */
+internal fun playPillShadow(alpha: Float = 0.95f): Shadow = Shadow(
+    radius = 14.dp,
+    offset = DpOffset(0.dp, 2.dp),
+    color = Color.Black.copy(alpha = 0.42f),
+    alpha = alpha
+)
+
+/**
  * A real Kyant0 Backdrop surface.
  *
  * The source must be a useful rendered backdrop (not a flat black placeholder).
@@ -109,12 +120,7 @@ fun GlassSurface(
                 )
             },
             shadow = {
-                Shadow(
-                    radius = 14.dp,
-                    offset = DpOffset(0.dp, 2.dp),
-                    color = Color.Black.copy(alpha = 0.42f),
-                    alpha = if (flatNavMaterial) 0f else 0.95f
-                )
+                playPillShadow(alpha = if (flatNavMaterial) 0f else 0.95f)
             },
             innerShadow = {
                 InnerShadow(

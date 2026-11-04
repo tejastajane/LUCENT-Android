@@ -1510,9 +1510,7 @@ private fun BottomNavigation(
 
             Spacer(Modifier.width(12.dp))
 
-            val searchModifier = Modifier.width(searchWidth).height(searchHeight).clip(
-                if (searchExpanded) RoundedCornerShape(50.dp) else CircleShape
-            ).then(
+            val searchModifier = Modifier.width(searchWidth).height(searchHeight).then(
                 if (!searchExpanded) Modifier.clickable {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onSearchExpandedChange(true)
@@ -1527,7 +1525,7 @@ private fun BottomNavigation(
             ) {
                 AnimatedContent(
                     targetState = searchExpanded,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(50.dp)),
                     contentAlignment = Alignment.Center,
                     transitionSpec = {
                         if (targetState) {
