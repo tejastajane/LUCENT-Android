@@ -21,6 +21,45 @@
 
 LUCENT is a local-media player built with Kotlin and Jetpack Compose. It combines libVLC playback with a custom, neutral Liquid Glass interface designed around translucent surfaces, backdrop blur, and lens refraction.
 
+## Screenshots
+
+The library screens are shown in both themes for a direct comparison. Player examples currently show the dark theme.
+
+<table>
+  <thead>
+    <tr>
+      <th>Screen</th>
+      <th>Light Theme</th>
+      <th>Dark Theme</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Videos</th>
+      <td><a href="screenshots/light/videos.jpg"><img src="screenshots/light/videos.jpg" width="220" alt="LUCENT Videos screen in light theme"></a></td>
+      <td><a href="screenshots/dark/videos.jpg"><img src="screenshots/dark/videos.jpg" width="220" alt="LUCENT Videos screen in dark theme"></a></td>
+    </tr>
+    <tr>
+      <th>Folders</th>
+      <td><a href="screenshots/light/folders.jpg"><img src="screenshots/light/folders.jpg" width="220" alt="LUCENT Folders screen in light theme"></a></td>
+      <td><a href="screenshots/dark/folders.jpg"><img src="screenshots/dark/folders.jpg" width="220" alt="LUCENT Folders screen in dark theme"></a></td>
+    </tr>
+    <tr>
+      <th>Settings</th>
+      <td><a href="screenshots/light/settings.jpg"><img src="screenshots/light/settings.jpg" width="220" alt="LUCENT Settings screen in light theme"></a></td>
+      <td><a href="screenshots/dark/settings.jpg"><img src="screenshots/dark/settings.jpg" width="220" alt="LUCENT Settings screen in dark theme"></a></td>
+    </tr>
+  </tbody>
+</table>
+
+### Video player
+
+<p align="center">
+  <a href="screenshots/dark/player.jpg"><img src="screenshots/dark/player.jpg" width="49%" alt="LUCENT video player controls in dark theme"></a>
+  <a href="screenshots/dark/player-audio-tracks.jpg"><img src="screenshots/dark/player-audio-tracks.jpg" width="49%" alt="LUCENT audio track selection panel in dark theme"></a>
+</p>
+
+
 > **Project status:** Active development. Once the persistent release-signing secrets are configured, every successful `main` build verifies the signing certificate and publishes the APK as the latest GitHub Release. Non-main and pull-request builds remain temporary testing artifacts. LUCENT is not a Play Store release.
 
 ## Download
@@ -126,15 +165,13 @@ app/build/outputs/apk/production/debug/app-production-debug.apk
 
 The APK workflow:
 1. Uses the tracked Gradle Wrapper and JDK 21.
-2. Builds a persistently signed production APK when the release keystore secrets are present; otherwise it builds a debug/testing APK.
+2. Requires the persistent release-signing secrets for main-branch builds; non-main and pull-request builds use a debug/testing APK.
 3. Generates a SHA-256 checksum and uploads the APK artifact.
-4. Publishes or updates the public latest release only for a main-branch build whose APK certificate matches the configured fingerprint.
+4. Publishes or updates the public latest release only after a main-branch APK passes verification against the configured persistent certificate fingerprint.
 
 The verification workflow separately runs focused unit tests and Android lint on pushes and pull requests. It does not claim to replace device testing, playback-corpus testing, or accessibility sessions.
 
 **Stable release signing:** Configure these GitHub Actions repository secrets before expecting new main builds to update the public latest APK: `LUCENT_KEYSTORE_BASE64`, `LUCENT_KEYSTORE_PASSWORD`, `LUCENT_KEY_ALIAS`, `LUCENT_KEY_PASSWORD`, and `LUCENT_SIGNING_CERT_SHA256`. Keep one keystore safe and backed up outside the repository; never commit it. The SHA-256 fingerprint must be the certificate belonging to that key. CI rejects a release APK if its signer differs.
-
-Historical testing APKs were signed with ephemeral debug certificates. Because those certificates differ, users of those historical builds may need a one-time uninstall/reinstall to move to the new stable signing identity; uninstalling removes app data. Future stable-signed releases can update in place when the same key is retained.
 
 See the [APK workflow](https://github.com/tejastajane/LUCENT-Android/actions/workflows/android.yml) and [verification workflow](https://github.com/tejastajane/LUCENT-Android/actions/workflows/verify.yml) for build and quality-check history.
 
