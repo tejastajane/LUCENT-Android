@@ -122,7 +122,7 @@ jobs:
             exit 1
           fi
           "$apksigner" verify --verbose --print-certs app/build/distributions/lucent.apk
-          actual="$("$apksigner" verify --print-certs app/build/distributions/lucent.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest/ { print $2; exit }' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          actual="$("$apksigner" verify --print-certs app/build/distributions/lucent.apk | awk -F': ' '/certificate SHA-256 digest:/ { print $NF; exit }' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           expected="$(printf '%s' "$LUCENT_SIGNING_CERT_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then
             echo "APK signing certificate does not match LUCENT_SIGNING_CERT_SHA256." >&2
