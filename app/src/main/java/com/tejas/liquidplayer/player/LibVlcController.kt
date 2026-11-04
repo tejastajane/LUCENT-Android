@@ -59,6 +59,10 @@ class LibVlcController(context: Context, hardwareAcceleration: Boolean = true) {
         if (released) return "The player has already been closed."
         return try {
             runCatching { player.stop() }
+            // A reused MediaPlayer retains engine-level state unless it is reset here.
+            runCatching { player.setRate(1f) }
+            runCatching { player.setAspectRatio(null) }
+            runCatching { player.setSpuDelay(0L) }
             // Keep libVLC at unity gain; the Android media stream owns user volume.
             runCatching { player.volume = 100 }
             contentDescriptor?.close()
